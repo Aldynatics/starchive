@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Starchive for us</title>
+
+    <link rel="icon" type="image/png" href="TSSIcon.jpg">
+
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+
+    <style>
+        :root {
+            --sky-deep: #050914;
+            --sky-mid: #0c1838;
+            --city-back: #0a1128;
+            --city-front: #121e42;
+            --window-glow: #ffeb7a;
+            --moon-pale: #e2ebf8;
+            --text-light: #f4f7fc;
+            --neon-accent: #4178c7;
+            --accent-hot: #ff6b6b;
+            --accent-gold: #f9c74f;
+            --accent-teal: #2ec4b6;
+            --accent-purple: #9b5de5;
+            --accent-rose: #ff85a1;
+            --accent-lime: #a7e05e;
+            --slide-bg-1: #0d1b3e;
+            --slide-bg-2: #1a0a2e;
+            --slide-bg-3: #0a1e1a;
+            --slide-bg-4: #1e0a14;
+            --slide-bg-5: #0f1a2e;
+        }
+
+        * { box-sizing: border-box; }
+
+        body, html {
+            margin: 0; padding: 0; width: 100%; height: 100%;
+            background-color: var(--sky-deep);
+            color: var(--text-light);
+            font-family: 'VT323', monospace;
+            overflow: hidden; user-select: none;
+        }
+
+        #scenic-canvas {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1;
+        }
+
+        .vignette-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: radial-gradient(circle, rgba(0,0,0,0) 40%, rgba(0,0,0,0.7) 100%);
+            z-index: 2; pointer-events: none;
+        }
+
+        .view-screen {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            z-index: 10; opacity: 1; transition: opacity 0.5s ease-in-out; padding: 20px;
+        }
+        .view-screen.hidden { opacity: 0; pointer-events: none; }
+
+        #transition-overlay {
+            position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center;
+            background: rgba(2, 6, 15, 0.9); color: var(--text-light); opacity: 0; pointer-events: none;
+            transition: opacity 0.4s ease; font-size: 1.4rem; letter-spacing: 2px; text-transform: uppercase;
+        }
+        #transition-overlay.active { opacity: 1; pointer-events: auto; }
+
+        @keyframes driftIn {
+            0% { transform: translateY(20px); opacity: 0; }
+            100% { transform: translateY(0); opacity: 1; }
+        }
+        .animate-in { animation: driftIn 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards; }
+
+        @keyframes warpOutSky {
+            0% { transform: scale(1) translateY(0); opacity: 1; }
+            40% { transform: scale(1.05) translateY(10px); opacity: 1; }
+            100% { transform: scale(0.8) translateY(-120px); opacity: 0; filter: blur(4px); }
+        }
+        .warp-out { animation: warpOutSky 1s cubic-bezier(0.5, 0, 0.2, 1) forwards; pointer-events: none; }
+
+        @keyframes pageSlideOutLeft {
+            0% { transform: translateX(0); opacity: 1; }
+            100% { transform: translateX(-40px); opacity: 0; }
+        }
+        @keyframes pageSlideInRight {
+            0% { transform: translateX(40px); opacity: 0; }
+            100% { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes pageSlideOutRight {
+            0% { transform: translateX(0); opacity: 1; }
+            100% { transform: translateX(40px); opacity: 0; }
+        }
+        @keyframes pageSlideInLeft {
+            0% { transform: translateX(-40px); opacity: 0; }
+            100% { transform: translateX(0); opacity: 1; }
+        }
+        .page-transition-out-next { animation: pageSlideOutLeft 0.35s ease-in forwards; }
+        .page-transition-in-next { animation: pageSlideInRight 0.35s ease-out forwards; }
+        .page-transition-out-prev { animation: pageSlideOutRight 0.35s ease-in forwards; }
+        .page-transition-in-prev { animation: pageSlideInLeft 0.35s ease-out forwards; }
+
+        .glass-panel {
+            background:
+                linear-gradient(rgba(5,9,20,0.2) 4px, transparent 4px),
+                linear-gradient(90deg, rgba(5,9,20,0.2) 4px, transparent 4px),
+                linear-gradient(to bottom,
+                    rgba(12,24,56,0.95) 0%, rgba(12,24,56,0.95) 20%,
+                    rgba(22,50,105,0.95) 20%, rgba(22,50,105,0.95) 40%,
+                    rgba(38,81,158,0.95) 40%, rgba(38,81,158,0.95) 60%,
+                    rgba(65,120,199,0.95) 60%, rgba(65,120,199,0.95) 80%,
+                    rgba(38,81,158,0.95) 80%, rgba(38,81,158,0.95) 100%);
+            background-size: 8px 8px, 8px 8px, 100% 100%;
+            clip-path: polygon(30px 0, 100% 0, 100% calc(100% - 30px), calc(100% - 30px) 100%, 0 100%, 0 30px);
+            padding: 40px; max-width: 650px; width: 100%; text-align: center;
+            position: relative; box-shadow: 0 15px 40px rgba(0,0,0,0.8);
+        }
+        .glass-panel::after {
+            content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(226,235,248,0.1);
+            clip-path: polygon(30px 0, 100% 0, 100% calc(100% - 30px), calc(100% - 30px) 100%, 0 100%, 0 30px);
+            z-index: -1; transform: scale(0.985);
+        }
+
+        .panel-title { font-size: 3.8rem; margin: 0 0 25px 0; text-shadow: 3px 3px 0px #050914; letter-spacing: 4px; }
+
+        .glass-btn {
+            background: linear-gradient(rgba(5,9,20,0.25) 2px, transparent 2px),
+                        linear-gradient(90deg, rgba(5,9,20,0.25) 2px, transparent 2px),
+                        linear-gradient(to bottom, #163269 0%, #163269 50%, #0c1838 50%, #0c1838 100%);
+            background-size: 4px 4px, 4px 4px, 100% 100%;
+            color: var(--text-light); font-family: 'VT323', monospace; font-size: 1.8rem;
+            padding: 14px 20px; margin: 8px; cursor: pointer; width: 80%; border: none;
+            clip-path: polygon(15px 0, 100% 0, 100% calc(100% - 15px), calc(100% - 15px) 100%, 0 100%, 0 15px);
+            transition: all 0.2s ease; text-transform: uppercase; text-shadow: 2px 2px 0px #050914;
+        }
+        .glass-btn:hover { background: linear-gradient(rgba(5,9,20,0.1) 2px, transparent 2px), linear-gradient(90deg, rgba(5,9,20,0.1) 2px, transparent 2px), linear-gradient(to bottom, #4178c7 0%, #4178c7 50%, #26519e 50%, #26519e 100%); background-size: 4px 4px, 4px 4px, 100% 100%; transform: scale(1.03); }
+        .glass-btn.locked { background: rgba(10,15,30,0.8) !important; color: #3b5284 !important; cursor: not-allowed; transform: none !important; text-shadow: none; }
+
+        /* WRAPPED SCREEN */
+        #wrapped-screen { background: rgba(5,9,20,0.85); backdrop-filter: blur(10px); justify-content: flex-start; padding-top: 3vh; }
+        .progress-container { display: flex; gap: 6px; width: 90%; max-width: 700px; height: 5px; z-index: 20; flex-shrink: 0; }
+        .progress-segment { flex-grow: 1; background: rgba(255,255,255,0.18); border-radius: 3px; overflow: hidden; }
+        .progress-fill { height: 100%; width: 0%; background: var(--moon-pale); transition: width 0.3s linear; }
+        .progress-fill.completed { width: 100%; }
+        .progress-fill.active { width: 100%; transition: width 8s linear; }
+
+        .story-content {
+            position: relative; flex-grow: 1; width: 100%; max-width: 700px;
+            display: flex; align-items: center; justify-content: center; text-align: center; padding: 10px 20px;
+        }
+
+        .story-slide {
+            position: absolute; opacity: 0; transform: translateY(20px);
+            transition: all 0.55s cubic-bezier(0.22, 0.61, 0.36, 1);
+            pointer-events: none;
+            width: 100%; max-width: 650px; min-height: 280px;
+            padding: 30px 25px; border-radius: 16px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            overflow: hidden;
+        }
+        .story-slide.active { opacity: 1; transform: translateY(0); }
+        .story-slide h2 { font-size: 2.6rem; color: var(--moon-pale); margin-bottom: 16px; text-shadow: 2px 2px 0 #050914; letter-spacing: 2px; position: relative; z-index: 2; }
+        .story-slide p { font-size: 1.5rem; color: #a4c0ed; text-shadow: 1px 1px 0 #050914; line-height: 1.5; position: relative; z-index: 2; }
+
+        .slide-hero {
+            background: radial-gradient(ellipse at center, rgba(65,120,199,0.25) 0%, transparent 70%), var(--slide-bg-1);
+            border: 3px solid rgba(226,235,248,0.2);
+        }
+        .slide-hero h2 { font-size: 3.6rem; letter-spacing: 6px; color: #fff; }
+        .slide-hero h2::after { content: ''; display: block; width: 80px; height: 4px; background: var(--accent-gold); margin: 14px auto 0; border-radius: 2px; }
+
+        .slide-stat {
+            background: linear-gradient(160deg, var(--slide-bg-2) 0%, #0d1230 100%);
+            border-left: 6px solid var(--accent-hot); padding-left: 30px; text-align: left;
+        }
+        .big-num { font-size: 7rem; font-weight: bold; color: var(--accent-hot); line-height: 1; text-shadow: 4px 4px 0px rgba(0,0,0,0.5); margin-bottom: 8px; z-index: 2; position: relative; }
+        .stat-label { font-size: 1.6rem; color: #ffb3b3; letter-spacing: 3px; text-transform: uppercase; z-index: 2; position: relative; }
+
+        .slide-split {
+            background: linear-gradient(90deg, var(--slide-bg-3) 50%, #0a281f 50%);
+            flex-direction: row; gap: 20px; text-align: left; border-radius: 12px; padding: 20px 15px;
+        }
+        .split-left, .split-right { flex: 1; padding: 20px; display: flex; flex-direction: column; justify-content: center; z-index: 2; }
+        .split-left h2 { font-size: 2rem; color: var(--accent-teal); }
+        .split-right p { color: #b8f0e8; font-size: 1.3rem; }
+
+        .slide-minimal {
+            background: var(--slide-bg-4); border: 1px solid rgba(255,133,161,0.35);
+        }
+        .slide-minimal::before {
+            content: '◆'; position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+            font-size: 1.4rem; color: var(--accent-rose); opacity: 0.7; z-index: 1;
+        }
+        .slide-minimal h2 { font-size: 2.2rem; color: #ffccd5; margin-top: 6px; }
+        .slide-minimal p { color: #f0b8c5; max-width: 400px; }
+
+        .slide-quote {
+            background: var(--slide-bg-5); border-left: 8px solid var(--accent-purple);
+            text-align: left; padding-left: 35px;
+        }
+        .slide-quote::before {
+            content: '"'; position: absolute; top: -5px; left: 8px;
+            font-size: 5rem; color: rgba(155,93,229,0.5); line-height: 1; pointer-events: none; z-index: 1;
+        }
+        .slide-quote h2 { font-size: 2rem; color: #d4bfff; font-style: italic; margin-left: 5px; }
+        .slide-quote p { color: #c4a8f0; margin-left: 5px; }
+
+        .slide-geo {
+            background: radial-gradient(circle at 20% 30%, rgba(46,196,182,0.2) 0%, transparent 50%),
+                        radial-gradient(circle at 80% 70%, rgba(249,199,79,0.2) 0%, transparent 50%), var(--slide-bg-3);
+        }
+        .slide-geo::after {
+            content: ''; position: absolute; width: 80px; height: 80px;
+            border: 3px solid rgba(46,196,182,0.3); border-radius: 30% 70% 50% 50%;
+            top: 10px; right: 20px; pointer-events: none; transform: rotate(20deg); z-index: 1;
+        }
+        .slide-geo h2 { color: #fff; font-size: 2.5rem; }
+
+        .slide-burst {
+            background: radial-gradient(ellipse at 30% 40%, rgba(255,107,107,0.35) 0%, transparent 55%),
+                        radial-gradient(ellipse at 70% 60%, rgba(249,199,79,0.3) 0%, transparent 55%), #0d0d28;
+            border: 2px solid rgba(255,107,107,0.3);
+        }
+        .slide-burst h2 { color: #ffe0e0; font-size: 3rem; text-shadow: 0 0 20px rgba(255,107,107,0.5); }
+        .slide-burst p { color: #ffd4a8; }
+
+        .slide-timeline {
+            background: var(--slide-bg-1); text-align: left; padding-left: 40px;
+        }
+        .slide-timeline::before {
+            content: ''; position: absolute; left: 18px; top: 20px; bottom: 20px;
+            width: 3px; background: linear-gradient(to bottom, var(--accent-gold), var(--accent-teal)); border-radius: 2px; z-index: 1;
+        }
+        .slide-timeline h2 { font-size: 1.9rem; color: #fff; }
+        .slide-timeline h2::before {
+            content: '●'; position: absolute; left: -27px; top: 50%; transform: translateY(-50%);
+            color: var(--accent-gold); font-size: 0.8rem;
+        }
+        .slide-timeline p { color: #c4d6f0; padding-left: 0; }
+        .slide-timeline p::before {
+            content: '○'; position: absolute; left: -26px; top: 2px; color: var(--accent-teal); font-size: 0.6rem;
+        }
+
+        .slide-soft {
+            background: linear-gradient(180deg, #1a0f2e 0%, #0f1a2e 100%);
+            border-radius: 20px; border: 1px solid rgba(255,133,161,0.25);
+        }
+        .soft-dots { position: absolute; top: 18px; right: 20px; display: flex; gap: 6px; pointer-events: none; z-index: 1; }
+        .soft-dots span { width: 7px; height: 7px; border-radius: 50%; background: var(--accent-rose); opacity: 0.6; display: inline-block; }
+        .slide-soft h2 { font-size: 2rem; color: #ffccd5; }
+        .slide-soft p { color: #e8c8d8; font-size: 1.4rem; }
+
+        .slide-finale {
+            background: radial-gradient(ellipse at center, rgba(249,199,79,0.3) 0%, transparent 65%), var(--slide-bg-2);
+            border: 3px solid rgba(249,199,79,0.5);
+        }
+        .slide-finale h2 { font-size: 3.2rem; color: #fff; letter-spacing: 5px; text-shadow: 0 0 30px rgba(249,199,79,0.6); }
+        .slide-finale p { color: #ffe9b0; font-size: 1.5rem; }
+
+        .tap-zone { position: absolute; top: 8%; bottom: 0; z-index: 15; }
+        .tap-left { left: 0; width: 30%; }
+        .tap-right { right: 0; width: 70%; }
+
+        /* DIARY & GALLERY */
+        .dual-page-layout { display: flex; width: 100%; height: 320px; gap: 20px; margin-bottom: 15px; }
+        .book-page { flex: 1; background: rgba(5,9,20,0.6); padding: 20px; text-align: left; display: flex; flex-direction: column; clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px); }
+        .book-text { flex-grow: 1; font-size: 1.5rem; color: #c4d6f0; display: flex; align-items: center; justify-content: center; text-align: center; letter-spacing: 2px; }
+        .book-num { font-size: 1rem; color: var(--neon-accent); text-align: center; margin-top: 8px; }
+        .gallery-box { flex-grow: 1; border: 2px dashed var(--neon-accent); display: flex; align-items: center; justify-content: center; color: var(--moon-pale); font-size: 1.4rem; background: rgba(65,120,199,0.1); margin-bottom: 10px; letter-spacing: 2px; }
+        .gallery-box.empty-slot { border-style: dotted; opacity: 0.4; color: #5a7ab8; }
+        .matrix-layout { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+
+        @media (max-width: 600px) {
+            .glass-panel { padding: 25px 15px; max-width: 95%; clip-path: polygon(18px 0, 100% 0, 100% calc(100% - 18px), calc(100% - 18px) 100%, 0 100%, 0 18px); }
+            .panel-title { font-size: 2.4rem; }
+            .glass-btn { font-size: 1.3rem; padding: 10px 14px; width: 90%; }
+            .story-slide { min-height: 240px; padding: 20px 15px; }
+            .story-slide h2 { font-size: 1.8rem; }
+            .story-slide p { font-size: 1.1rem; }
+            .big-num { font-size: 4.5rem; }
+            .slide-split { flex-direction: column !important; background: linear-gradient(180deg, var(--slide-bg-3) 50%, #0a281f 50%) !important; gap: 5px; }
+            .split-left, .split-right { padding: 10px; }
+            .slide-quote h2 { font-size: 1.5rem; }
+            .slide-geo::after { width: 50px; height: 50px; top: 8px; right: 12px; }
+            .dual-page-layout { flex-direction: column; height: auto; gap: 10px; }
+            .book-page { min-height: 140px; }
+        }
+    </style>
+</head>
+<body>
+    <canvas id="scenic-canvas"></canvas>
+    <div class="vignette-overlay"></div>
+    <div id="transition-overlay">Entering the little room...</div>
+    <audio id="ambient-audio" src="TSSMusic.mp3" preload="auto" loop></audio>
+
+    <!-- INTRO -->
+    <div id="gate-screen" class="view-screen">
+        <div class="glass-panel" style="max-width: 450px;">
+            <h1 class="panel-title">The Sea of<br>our Stars</h1>
+            <p style="color: #a4c0ed; font-size: 1.4rem; margin-bottom: 30px; text-shadow: 2px 2px 0 #050914;">✦ Coordinates Locked ✦</p>
+            <button class="glass-btn" onclick="wakeSkyPortal()" style="width: 100%;">Enter the Story</button>
+        </div>
+    </div>
+
+    <!-- MAIN MENU -->
+    <div id="menu-screen" class="view-screen hidden">
+        <div class="glass-panel animate-in" style="max-width: 450px;">
+            <h2 class="panel-title" style="font-size: 3rem;">Menu</h2>
+            <button class="glass-btn" onclick="routeTo('storyline-screen')">Storylines</button>
+            <button class="glass-btn" onclick="launchGameFromSlides()">The Haven</button>
+            <button class="glass-btn" onclick="bootBook('diary')">Our Diary</button>
+            <button class="glass-btn" onclick="bootBook('gallery')">Gallery</button>
+            <button class="glass-btn" onclick="routeTo('faq-screen')">Others</button>
+        </div>
+    </div>
+
+    <!-- STORYLINE GRID -->
+    <div id="storyline-screen" class="view-screen hidden">
+        <div class="glass-panel animate-in">
+            <h2 class="panel-title" style="font-size: 2.4rem;">Story Modules</h2>
+            <div id="story-matrix-box" class="matrix-layout"></div>
+            <button class="glass-btn" style="margin-top: 30px; width: 50%;" onclick="routeTo('menu-screen')">Return to Menu</button>
+        </div>
+    </div>
+
+    <!-- DIARY -->
+    <div id="diary-screen" class="view-screen hidden">
+        <div class="glass-panel animate-in" style="max-width: 700px;">
+            <h2 class="panel-title" style="font-size: 2rem;">Log Archive</h2>
+            <div class="dual-page-layout" id="diary-page-layout">
+                <div class="book-page" id="diary-l-page-container">
+                    <div class="book-text" id="diary-l-page">Loading...</div>
+                    <div class="book-num" id="diary-l-idx">p. 1</div>
+                </div>
+                <div class="book-page" id="diary-r-page-container">
+                    <div class="book-text" id="diary-r-page">Loading...</div>
+                    <div class="book-num" id="diary-r-idx">p. 2</div>
+                </div>
+            </div>
+
+            <div class="matrix-layout">
+                <button class="glass-btn" style="width: 30%;" onclick="pageBook('diary', -2)">◀ Prev</button>
+                <button class="glass-btn" style="width: 30%;" onclick="routeTo('menu-screen')">Close Log</button>
+                <button class="glass-btn" style="width: 30%;" onclick="pageBook('diary', 2)">Next ▶</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- GALLERY -->
+    <div id="gallery-screen" class="view-screen hidden">
+        <div class="glass-panel animate-in">
+            <h2 class="panel-title" style="font-size: 2rem;">Visual Matrix</h2>
+            <div class="dual-page-layout" id="gallery-page-layout">
+                <div class="book-page" id="gallery-l-page-container">
+                    <div class="gallery-box" id="gallery-l-box">Render A</div>
+                    <div class="book-num" id="gallery-l-idx">Slot 1</div>
+                </div>
+                <div class="book-page" id="gallery-r-page-container">
+                    <div class="gallery-box" id="gallery-r-box">Render B</div>
+                    <div class="book-num" id="gallery-r-idx">Slot 2</div>
+                </div>
+            </div>
+            <div class="matrix-layout">
+                <button class="glass-btn" style="width: 30%;" onclick="pageBook('gallery', -2)">◀ Prev</button>
+                <button class="glass-btn" style="width: 30%;" onclick="routeTo('menu-screen')">Close</button>
+                <button class="glass-btn" style="width: 30%;" onclick="pageBook('gallery', 2)">Next ▶</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- OTHERS / FAQ -->
+    <div id="faq-screen" class="view-screen hidden">
+        <div class="glass-panel animate-in">
+            <h2 class="panel-title" style="font-size: 2.4rem;">System Data</h2>
+            <div style="text-align: left; font-size: 1.3rem; margin-bottom: 20px; line-height: 1.5; color: #c4d6f0;">
+                <p><span style="color:var(--window-glow)">> Made by One and Only:</span> Dynn Dynn</p>
+                <p><span style="color:var(--window-glow)">> Why?:</span> Because I love my babiii</p>
+                <p><span style="color:var(--window-glow)">> Fun Fact:</span> This updates every year exactly july 24!</p>
+                <p>I just want to put this section maybe if I wanted to show some misc. stuff</p>
+            </div>
+            <button class="glass-btn" style="width: 50%;" onclick="routeTo('menu-screen')">Disconnect</button>
+        </div>
+    </div>
+
+    <!-- CHAPTER 1 WRAPPED - 10 SLIDES -->
+    <div id="wrapped-screen" class="view-screen hidden">
+        <div class="progress-container" id="progress-bar-container"></div>
+        <div class="story-content" id="story-content-container">
+            <div class="story-slide slide-hero active">
+                <h2>Hi my love!</h2>
+                <p>I dedicate this mini cutesy archive for us.<br>The times I told you i was very busy was because of this lel. I hope you like it :></p>
+            </div>
+            <div class="story-slide slide-stat">
+                <div class="big-num">609</div>
+                <div class="stat-label">Days in Orbit</div>
+                <p style="margin-top:12px;">That's how long we've been together my love, and I am very proud of usss</p>
+            </div>
+            <div class="story-slide slide-split">
+                <div class="split-left"><h2>20<br>Monthsaries</h2></div>
+                <div class="split-right"><p>Even if were very far apart, we've still managed to get as far as this and still goingg!</p></div>
+            </div>
+            <div class="story-slide slide-minimal">
+                <h2>So what's all this..?</h2>
+                <p>I'm grateful for all the moments we shared, but apparently all of this came because...</p>
+            </div>
+            <div class="story-slide slide-quote">
+                <h2>"ITS YOUR LUCKY HAPPY BIRTHDAY!!!</h2>
+                <p>— HAPPY HAPPY HAPPY HAPPIEST BIRTHDAY MY BABI MY LOVEEE :>>></p>
+            </div>
+            <div class="story-slide slide-geo">
+                <h2>Thank youuu</h2>
+                <p>For all the love, affection, help, kindness, and care you've given meee.</p>
+            </div>
+            <div class="story-slide slide-burst">
+                <h2>I'll always remember</h2>
+                <p>The times where I was in need and you were always there, even staying up late just for me</p>
+            </div>
+            <div class="story-slide slide-timeline">
+                <h2>And I ought to share the same favor.</h2>
+                <p>So love, I made this mini site that would keep all our memories together as a gift to your birthdayy</p>
+            </div>
+            <div class="story-slide slide-soft">
+                <div class="soft-dots"><span></span><span></span><span></span></div>
+                <h2>PLS I DID MY BEST MAKING THIS</h2>
+                <p>Even though its not that much, I hope this would make you happyy! Dont worryy theres more to come in the future ;></p>
+            </div>
+            <div class="story-slide slide-finale">
+                <h2>Andd a Final Message</h2>
+                <p>I loveeee you so much my dearest, I wish you the happiest birthday and I wish you the best of health and for us to meet AS SOON AS POSSIBLE. Aside from this short intro, I have letters for you in the Diary section, read it!!<br><br><span style="color:var(--window-glow); font-size:1.3rem;">[ Tap right to enter the Menu ]</span></p>
+            </div>
+        </div>
+        <div class="tap-zone tap-left" onclick="navigateStory(-1)"></div>
+        <div class="tap-zone tap-right" onclick="navigateStory(1)"></div>
+    </div>
+    
+    <script>
+        function startAmbientAudio() {
+            const audio = document.getElementById('ambient-audio');
+            if (!audio || audio.dataset.started === 'true') return;
+            audio.volume = 0.3;
+            audio.loop = true;
+            const tryPlay = () => {
+                audio.play().then(() => {
+                    audio.dataset.started = 'true';
+                }).catch(() => {
+                    setTimeout(tryPlay, 250);
+                });
+            };
+            if (audio.readyState >= 2) {
+                tryPlay();
+            } else {
+                audio.addEventListener('canplaythrough', tryPlay, { once: true });
+                audio.load();
+                setTimeout(tryPlay, 400);
+            }
+        }
+
+        function launchGameFromSlides() {
+            const overlay = document.getElementById('transition-overlay');
+            overlay.classList.add('active');
+            startAmbientAudio();
+            setTimeout(() => {
+                window.location.href = 'game.html';
+            }, 900);
+        }
+
+        const DATE_LOCK_ANCHOR = new Date('2026-07-20T00:00:00');
+
+        function wakeSkyPortal() {
+            startAmbientAudio();
+            const gate = document.getElementById('gate-screen');
+            gate.classList.add('warp-out');
+            setTimeout(() => {
+                gate.classList.add('hidden');
+                gate.classList.remove('warp-out');
+                const now = new Date();
+                if (now >= DATE_LOCK_ANCHOR && localStorage.getItem('ch1_viewed') !== 'true') {
+                    initStoryMode();
+                    routeTo('wrapped-screen');
+                } else {
+                    routeTo('menu-screen');
+                }
+                compileMatrixGrid(now);
+            }, 1000);
+        }
+
+        function routeTo(id) {
+            document.querySelectorAll('.view-screen').forEach(v => {
+                v.classList.add('hidden');
+                const panel = v.querySelector('.glass-panel');
+                if (panel) {
+                    panel.classList.remove('animate-in');
+                    void panel.offsetWidth;
+                    panel.classList.add('animate-in');
+                }
+            });
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        function compileMatrixGrid(timeContext) {
+            const matrix = document.getElementById('story-matrix-box');
+            matrix.innerHTML = '';
+            for (let idx = 1; idx <= 6; idx++) {
+                let releaseCheck;
+                if (idx === 1) releaseCheck = DATE_LOCK_ANCHOR;
+                else releaseCheck = new Date(`2026-0${7 + idx}-20T00:00:00`);
+                const btn = document.createElement('button');
+                btn.className = 'glass-btn';
+                btn.style.width = '28%';
+                if (timeContext >= releaseCheck) {
+                    btn.innerText = `Ch ${idx}`;
+                    btn.onclick = () => {
+                        if (idx === 1) {
+                            initStoryMode();
+                            routeTo('wrapped-screen');
+                        }
+                    };
+                } else {
+                    btn.innerText = `🔒 Ch ${idx}`;
+                    btn.classList.add('locked');
+                }
+                matrix.appendChild(btn);
+            }
+        }
+
+        let currentSlideIndex = 0;
+        let slideTimer;
+        const totalSlides = 10;
+        const SLIDE_DURATION = 8000;
+
+        function initStoryMode() {
+            currentSlideIndex = 0;
+            const progContainer = document.getElementById('progress-bar-container');
+            progContainer.innerHTML = '';
+            for (let i = 0; i < totalSlides; i++) {
+                progContainer.innerHTML += `<div class="progress-segment"><div class="progress-fill" id="prog-${i}"></div></div>`;
+            }
+            updateStoryView();
+        }
+
+        function navigateStory(direction) {
+            clearTimeout(slideTimer);
+            currentSlideIndex += direction;
+            if (currentSlideIndex < 0) currentSlideIndex = 0;
+            else if (currentSlideIndex >= totalSlides) {
+                const isFirstTime = !localStorage.getItem('ch1_viewed');
+                localStorage.setItem('ch1_viewed', 'true');
+                if (isFirstTime) {
+                    launchGameFromSlides();
+                } else {
+                    routeTo('menu-screen');
+                }
+                return;
+            }
+            updateStoryView();
+        }
+
+        function updateStoryView() {
+            const slides = document.querySelectorAll('.story-slide');
+            slides.forEach((slide, idx) => slide.classList.toggle('active', idx === currentSlideIndex));
+            for (let i = 0; i < totalSlides; i++) {
+                const fill = document.getElementById(`prog-${i}`);
+                fill.className = 'progress-fill';
+                if (i < currentSlideIndex) fill.classList.add('completed');
+                else if (i === currentSlideIndex) {
+                    void fill.offsetWidth;
+                    fill.classList.add('active');
+                }
+            }
+            slideTimer = setTimeout(() => navigateStory(1), SLIDE_DURATION);
+        }
+
+        const diaryEntries = [
+            'Diary Entry 1: Happiest Birthday my dearest, I just want to say that I am very grateful to have the opportunity to be your boyfriend',
+            'Thank you for all the memories we\'ve shared together. I know thanking you is not enough',
+            'But what I\'m trying to say is that you have done so much for me, you\'ve helped me when I was in need',
+            'You didnt give up on me, and you never judged me, you always supported me and thats what I\'ve always loved about you.',
+            'And like I promised, I will keep my part as your boyfriend, to give you the utmost love you deserve.',
+            'I may not have given you everything that you deserve, I will always give you everything that I have that you deserve.',
+            'One day, I\'m finally gonna be able to show you the things I would do for you. Count on me',
+            'Again, Happy Happy Happy Happiest Birthday my love my babi my dearest Cynthia, always know that I will be here for you no matter the situation may be :>'
+        ];
+        const galleryEntries = ['Image 1', 'Image 2', 'Image 3'];
+        const localBookIndex = { diary: 1, gallery: 1 };
+
+        function bootBook(type) {
+            localBookIndex[type] = 1;
+            renderPages(type, null);
+            routeTo(`${type}-screen`);
+        }
+
+        function pageBook(type, offset) {
+            const newIndex = localBookIndex[type] + offset;
+            const entries = type === 'diary' ? diaryEntries : galleryEntries;
+            const maxStartIndex = entries.length % 2 === 0 ? entries.length - 1 : entries.length;
+            if (newIndex < 1 || newIndex > maxStartIndex) return;
+            const direction = offset > 0 ? 'next' : 'prev';
+            localBookIndex[type] = newIndex;
+            renderPages(type, direction);
+        }
+
+        function renderPages(type, transitionDirection) {
+            const pL = localBookIndex[type];
+            const pR = localBookIndex[type] + 1;
+            const entries = type === 'diary' ? diaryEntries : galleryEntries;
+            const layoutEl = document.getElementById(`${type}-page-layout`);
+            const getEntry = (index) => {
+                const zeroBased = index - 1;
+                return (zeroBased >= 0 && zeroBased < entries.length) ? entries[zeroBased] : null;
+            };
+            const entryL = getEntry(pL);
+            const entryR = getEntry(pR);
+
+            if (transitionDirection && layoutEl) {
+                const outClass = transitionDirection === 'next' ? 'page-transition-out-next' : 'page-transition-out-prev';
+                const inClass = transitionDirection === 'next' ? 'page-transition-in-next' : 'page-transition-in-prev';
+                layoutEl.classList.add(outClass);
+                layoutEl.addEventListener('animationend', function handler() {
+                    layoutEl.removeEventListener('animationend', handler);
+                    layoutEl.classList.remove(outClass);
+                    updateContent();
+                    layoutEl.classList.add(inClass);
+                    layoutEl.addEventListener('animationend', function handler2() {
+                        layoutEl.removeEventListener('animationend', handler2);
+                        layoutEl.classList.remove(inClass);
+                    });
+                });
+            } else {
+                updateContent();
+            }
+
+            function updateContent() {
+                if (type === 'diary') {
+                    document.getElementById('diary-l-page').innerHTML = entryL ? entryL : '<span style="opacity:0.4;">End of Log</span>';
+                    document.getElementById('diary-r-page').innerHTML = entryR ? entryR : '<span style="opacity:0.4;">End of Log</span>';
+                    document.getElementById('diary-l-idx').innerText = entryL ? `Page ${pL}` : '—';
+                    document.getElementById('diary-r-idx').innerText = entryR ? `Page ${pR}` : '—';
+                } else if (type === 'gallery') {
+                    const lBox = document.getElementById('gallery-l-box');
+                    const rBox = document.getElementById('gallery-r-box');
+                    if (entryL) { lBox.innerHTML = entryL; lBox.classList.remove('empty-slot'); }
+                    else { lBox.innerHTML = '[ Empty Slot ]'; lBox.classList.add('empty-slot'); }
+                    if (entryR) { rBox.innerHTML = entryR; rBox.classList.remove('empty-slot'); }
+                    else { rBox.innerHTML = '[ Empty Slot ]'; rBox.classList.add('empty-slot'); }
+                    document.getElementById('gallery-l-idx').innerText = entryL ? `Frame ${pL}` : '—';
+                    document.getElementById('gallery-r-idx').innerText = entryR ? `Frame ${pR}` : '—';
+                }
+            }
+        }
+
+        const cvs = document.getElementById('scenic-canvas');
+        const ctx = cvs.getContext('2d');
+        const PIXEL_SIZE = 4;
+        let eW, eH;
+        let stars = [], backCity = [], frontCity = [];
+
+        function resizeCanvas() {
+            cvs.width = window.innerWidth;
+            cvs.height = window.innerHeight;
+            eW = Math.ceil(cvs.width / PIXEL_SIZE);
+            eH = Math.ceil(cvs.height / PIXEL_SIZE);
+            generateSkyline();
+        }
+
+        function drawBlock(x, y, color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(Math.floor(x) * PIXEL_SIZE, Math.floor(y) * PIXEL_SIZE, PIXEL_SIZE, PIXEL_SIZE);
+        }
+
+        function generateSkyline() {
+            stars = []; backCity = []; frontCity = [];
+            for (let i = 0; i < (eW * eH) / 800; i++) {
+                stars.push({ x: Math.random() * eW, y: Math.random() * eH, alpha: Math.random(), speed: 0.01 + Math.random() * 0.02 });
+            }
+            let bx = 0;
+            while (bx < eW + 50) {
+                let w = 15 + Math.random() * 20;
+                let h = 20 + Math.random() * 35;
+                backCity.push(createBuilding(bx, w, h));
+                bx += w + (Math.random() * 5);
+            }
+            let fx = 0;
+            while (fx < eW + 50) {
+                let w = 20 + Math.random() * 30;
+                let h = 10 + Math.random() * 25;
+                frontCity.push(createBuilding(fx, w, h));
+                fx += w + (Math.random() * 10);
+            }
+        }
+
+        function createBuilding(x, w, h) {
+            let windows = [];
+            for (let wy = 2; wy < h - 2; wy += 3) {
+                for (let wx = 2; wx < w - 2; wx += 3) {
+                    if (Math.random() > 0.6) {
+                        windows.push({ rx: wx, ry: wy, blink: Math.random() > 0.9, on: Math.random() > 0.5 });
+                    }
+                }
+            }
+            return { x, w, h, windows };
+        }
+
+        function renderScene() {
+            ctx.fillStyle = '#050914';
+            ctx.fillRect(0, 0, cvs.width, cvs.height);
+            stars.forEach(s => {
+                s.alpha += s.speed;
+                if (s.alpha > 1 || s.alpha < 0) s.speed *= -1;
+                ctx.globalAlpha = Math.max(0, Math.min(1, s.alpha));
+                drawBlock(s.x, s.y, '#c4d6f0');
+            });
+            ctx.globalAlpha = 1.0;
+            let mx = eW * 0.8, my = eH * 0.25, r = 10;
+            for (let y = -r; y <= r; y++) {
+                for (let x = -r; x <= r; x++) {
+                    if (x * x + y * y <= r * r) {
+                        if (x * x + y * y > (r * 0.7) * (r * 0.7) && x < y && Math.floor(mx + x + my + y) % 2 === 0) {
+                            drawBlock(mx + x, my + y, '#4178c7');
+                        } else drawBlock(mx + x, my + y, '#e2ebf8');
+                    }
+                }
+            }
+            const drawCityLayer = (buildings, color, speed) => {
+                buildings.forEach(b => {
+                    b.x -= speed;
+                    if (b.x + b.w < 0) {
+                        let lastB = buildings.reduce((prev, curr) => (prev.x > curr.x) ? prev : curr);
+                        b.x = lastB.x + lastB.w + (Math.random() * 10);
+                    }
+                    let by = eH - b.h;
+                    ctx.fillStyle = color;
+                    ctx.fillRect(Math.floor(b.x) * PIXEL_SIZE, Math.floor(by) * PIXEL_SIZE, Math.floor(b.w) * PIXEL_SIZE, Math.floor(b.h) * PIXEL_SIZE);
+                    b.windows.forEach(w => {
+                        if (w.blink && Math.random() > 0.98) w.on = !w.on;
+                        if (w.on) drawBlock(b.x + w.rx, by + w.ry, '#ffeb7a');
+                    });
+                });
+            };
+            drawCityLayer(backCity, '#0a1128', 0.15);
+            drawCityLayer(frontCity, '#121e42', 0.35);
+            requestAnimationFrame(renderScene);
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('pointerdown', startAmbientAudio, { once: true });
+        window.addEventListener('keydown', startAmbientAudio, { once: true });
+        resizeCanvas();
+        renderScene();
+    </script>
+</body>
+</html>

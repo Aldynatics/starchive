@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bob's Cozy Home</title>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
+
+  <style>
+    :root {
+      --bg-dark: #090c15; --panel-bg: #151a28; --border-color: #2a344d;
+      --accent-gold: #ffd166; --accent-mint: #06d6a0; --accent-pink: #ff70a6;
+      --text-main: #f8f9fa; --text-muted: #a0aec0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      background: radial-gradient(circle at center, #131a2d 0%, var(--bg-dark) 100%);
+      color: var(--text-main); font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      overflow: hidden; user-select: none; -webkit-touch-callout: none;
+    }
+    .shell {
+      width: min(96vw, 1250px); border: 3px solid var(--border-color);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.6), inset 0 0 15px rgba(255,255,255,0.05);
+      background: var(--panel-bg); padding: 18px; border-radius: 20px;
+    }
+    .hud {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 12px; margin-bottom: 12px; font-size: 14px; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: 1px; font-weight: 600;
+    }
+    .hud strong { color: var(--accent-gold); }
+    .badge {
+      background: rgba(255,209,102,0.15); color: var(--accent-gold);
+      padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(255,209,102,0.3);
+    }
+    .game-container { position: relative; width: 100%; }
+    canvas {
+      display: block; width: 100%; border-radius: 12px;
+      image-rendering: pixelated; image-rendering: crisp-edges;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4); cursor: crosshair;
+    }
+    #joystick-container {
+      position: absolute; bottom: 55px; left: 55px; width: 110px; height: 110px;
+      border-radius: 50%; background: rgba(255,255,255,0.06);
+      border: 2px solid rgba(255,255,255,0.15); pointer-events: auto;
+      touch-action: none; z-index: 15; display: none;
+    }
+    @media (pointer: coarse), (max-width: 900px) {
+      #joystick-container { display: block; }
+      #mobile-buttons { display: flex; }
+    }
+    #joystick-knob {
+      position: absolute; top: 30px; left: 30px; width: 50px; height: 50px;
+      border-radius: 50%; background: rgba(6,214,160,0.65);
+      border: 2px solid var(--accent-mint); box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+    #mobile-buttons {
+      position: absolute; bottom: 20px; right: 20px; display: none; gap: 12px; z-index: 15;
+    }
+    .mob-btn {
+      width: 55px; height: 55px; border-radius: 50%; background: rgba(21,26,40,0.9);
+      border: 2px solid var(--accent-gold); color: var(--accent-gold);
+      font-weight: bold; font-size: 13px; display: grid; place-items: center;
+      cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    }
+    #message-toast {
+      position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: rgba(15,23,42,0.95); border: 2px solid var(--accent-gold);
+      color: var(--accent-gold); padding: 14px 22px; border-radius: 12px;
+      font-size: 14px; font-weight: 600; text-align: center; max-width: 90%;
+      opacity: 0; transition: opacity 0.3s; z-index: 10;
+    }
+    #loading-screen {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      background: #090c15; border-radius: 12px; display: flex;
+      flex-direction: column; justify-content: center; align-items: center;
+      z-index: 100; transition: opacity 0.8s;
+    }
+    #loading-screen .bob-avatar {
+      width: 80px; height: 80px; background: var(--accent-mint);
+      border-radius: 50%; box-shadow: 0 0 20px rgba(6,214,160,0.5);
+      margin-bottom: 20px; animation: bounce 1s infinite alternate;
+    }
+    @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-10px); } }
+    .modal-overlay {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.7); border-radius: 12px; display: flex;
+      justify-content: center; align-items: center; opacity: 0; pointer-events: none;
+      transition: opacity 0.3s; z-index: 20;
+    }
+    .modal-overlay.active { opacity: 1; pointer-events: all; }
+    .modal-content {
+      background: #2b1d38; border: 3px solid #ffb5a7; padding: 24px;
+      border-radius: 16px; text-align: center;
+    }
+    .modal-content p { font-size: 18px; color: #ffe39f; }
+    .btn-group { display: flex; gap: 12px; justify-content: center; }
+    .btn {
+      background: #151a28; color: white; border: 2px solid #ffb5a7;
+      padding: 8px 16px; border-radius: 8px; cursor: pointer; font-weight: bold;
+    }
+    #sleep-screen {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      background: #060913; border-radius: 12px; display: flex;
+      flex-direction: column; justify-content: center; align-items: center;
+      opacity: 0; pointer-events: none; transition: opacity 2s; z-index: 50;
+      color: #a8dadc;
+    }
+    #sleep-screen h1 { font-size: 3rem; color: #ffd166; }
+    #interactive-diary {
+      position: absolute; top: 10.526%; left: 15.625%; width: 68.75%; height: 78.947%;
+      background: transparent; display: none; flex-direction: column; z-index: 15;
+    }
+    #interactive-diary.active { display: flex; }
+    .diary-controls {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-top: auto; padding: 0 30px 15px;
+    }
+    .diary-btn {
+      background: #4a3728; color: #f4ebd8; border: 2px solid #d5c4a1;
+      padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold;
+    }
+    textarea {
+      background: transparent; border: none; resize: none; outline: none;
+      font-family: 'Comic Sans MS', cursive, sans-serif; font-size: 15px;
+      color: #4a3728; line-height: 1.5; width: 48%; height: 72%;
+      margin-left: 50%; margin-top: 25px; padding: 10px 15px;
+    }
+    .footer {
+      margin-top: 12px; padding: 10px 14px;
+      background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 10px; color: var(--text-muted); font-size: 14px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .key {
+      background: #232d42; color: var(--accent-mint); padding: 2px 7px;
+      border-radius: 4px; font-family: monospace; font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+<audio id="ambient-audio" src="TSSMusic.mp3" preload="auto" loop></audio>
+<div class="shell">
+  <div class="hud">
+    <div><strong>Bob's Haven</strong> <span class="badge" id="view-badge">Room View</span></div>
+    <div>Interact: <span class="key">E</span> or <span class="key">Click</span></div>
+  </div>
+  <div class="game-container">
+    <div id="loading-screen">
+      <div class="bob-avatar"></div><h2>Loading Bob's Room...</h2>
+    </div>
+    <canvas id="game" width="640" height="380"></canvas>
+    <div id="joystick-container"><div id="joystick-knob"></div></div>
+    <div id="mobile-buttons">
+      <div class="mob-btn" id="hop-btn">HOP</div>
+      <div class="mob-btn" id="action-btn">E</div>
+    </div>
+    <div id="message-toast"></div>
+    <div id="bed-modal" class="modal-overlay">
+      <div class="modal-content">
+        <p>The bed looks incredibly warm and cozy...</p>
+        <div class="btn-group">
+          <button class="btn" onclick="sleepNow()">Sleep (Return to Menu)</button>
+          <button class="btn" onclick="closeModal()">Stay Awake</button>
+        </div>
+      </div>
+    </div>
+    <div id="sleep-screen"><h1>Zzz...</h1><p>Sweet dreams, little bob. Returning to menu...</p></div>
+    <div id="interactive-diary">
+      <textarea id="diary-text" placeholder="Write your thoughts..." oninput="saveDiary()"></textarea>
+      <div class="diary-controls">
+        <button class="diary-btn" onclick="prevPage()">◄ Prev</button>
+        <span style="color:#4a3728;" id="page-display">Page 1</span>
+        <button class="diary-btn" id="next-btn" onclick="nextPage()">Next ►</button>
+      </div>
+    </div>
+  </div>
+  <div class="footer">
+    <div id="footer-text">Explore the room!</div>
+    <div class="controls-hint">
+      <span>Move: <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span></span>
+      <span>Hop: <span class="key">Space</span></span>
+    </div>
+  </div>
+</div>
+<script>
+  let shootingStars = [];
+// ── AUDIO ─────────────────────────────
+function startAmbientAudio() {
+  const audio = document.getElementById('ambient-audio');
+  if (!audio) return;
+  audio.volume = 0.28; audio.loop = true;
+  const ensure = () => { if (audio.paused) audio.play().catch(()=>{}); };
+  if (audio.dataset.started) { ensure(); return; }
+  const tryPlay = () => {
+    audio.play().then(() => { audio.dataset.started = '1'; ensure(); }).catch(() => setTimeout(tryPlay, 250));
+  };
+  if (audio.readyState >= 2) tryPlay();
+  else { audio.addEventListener('canplaythrough', tryPlay, { once: true }); audio.load(); setTimeout(tryPlay, 600); }
+}
+window.addEventListener('load', () => {
+  startAmbientAudio();
+  setTimeout(() => {
+    const loader = document.getElementById('loading-screen');
+    loader.style.opacity = '0';
+    setTimeout(() => loader.style.display = 'none', 800);
+  }, 1200);
+});
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const viewBadge = document.getElementById('view-badge');
+const footerText = document.getElementById('footer-text');
+const toast = document.getElementById('message-toast');
+const bedModal = document.getElementById('bed-modal');
+const sleepScreen = document.getElementById('sleep-screen');
+const interactiveDiary = document.getElementById('interactive-diary');
+const diaryText = document.getElementById('diary-text');
+const pageDisplay = document.getElementById('page-display');
+
+let keys = {}, mouseX = 0, mouseY = 0, toastTimeout, modalOpen = false;
+let viewState = 'room', particles = [], stars = [];
+let joystickX = 0, joystickY = 0, isDragging = false, joyCenter = { x:0, y:0 };
+const maxJoy = 30;
+const joyCon = document.getElementById('joystick-container');
+const joyKnob = document.getElementById('joystick-knob');
+joyCon.addEventListener('pointerdown', e => {
+  isDragging = true;
+  const r = joyCon.getBoundingClientRect();
+  joyCenter = { x: r.left + r.width/2, y: r.top + r.height/2 };
+  updateJoystick(e.clientX, e.clientY);
+  joyCon.setPointerCapture(e.pointerId);
+});
+joyCon.addEventListener('pointermove', e => { if (!isDragging) return; updateJoystick(e.clientX, e.clientY); });
+function endJoy() { isDragging = false; joystickX = 0; joystickY = 0; joyKnob.style.transform = 'translate(0px,0px)'; }
+joyCon.addEventListener('pointerup', endJoy);
+joyCon.addEventListener('pointercancel', endJoy);
+function updateJoystick(cx, cy) {
+  const dx = cx - joyCenter.x, dy = cy - joyCenter.y;
+  const dist = Math.hypot(dx, dy);
+  const ang = Math.atan2(dy, dx);
+  const cl = Math.min(dist, maxJoy);
+  const mx = Math.cos(ang)*cl, my = Math.sin(ang)*cl;
+  joyKnob.style.transform = `translate(${mx}px,${my}px)`;
+  joystickX = mx/maxJoy; joystickY = my/maxJoy;
+}
+document.getElementById('hop-btn').addEventListener('pointerdown', e => {
+  e.preventDefault();
+  if (viewState === 'room' && player.z === 0 && !modalOpen) { player.vz = 4.8; player.squishX = 0.75; player.squishY = 1.3; }
+});
+document.getElementById('action-btn').addEventListener('pointerdown', e => {
+  e.preventDefault();
+  if (viewState === 'room' && !modalOpen) {
+    const near = rooms[currentRoom].items.find(isNear);
+    if (near) interactRoomItem(near);
+  }
+});
+
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyCQ_zn_IAFPn32CfMJP5ZVILhihZfPpwzI",
+  authDomain: "project-stargaze24.firebaseapp.com",
+  projectId: "project-stargaze24",
+  storageBucket: "project-stargaze24.firebasestorage.app",
+  messagingSenderId: "104923846657",
+  appId: "1:104923846657:web:7d8a5605a0a1ae5f04c800",
+  measurementId: "G-P6QEP33S38"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// ── GAME STATE ────────────────────────
+const rooms = {
+  bedroom: {
+    name: "Bob's Bedroom",
+    bounds: { left: 50, right: 590, top: 30, bottom: 350 },   // for drawing
+    playerBounds: { left: 75, right: 565, top: 145, bottom: 335 }, // where Bob can walk
+    floorY: 130,
+    doors: [
+  { x: 50, y: 180, w: 30, h: 70, drawX: 50, drawW: 12, target: 'livingroom', spawnX: 540, spawnY: 220, dir: 'west' }
+],
+  
+            items: [
+      { id:'desk', name:'Study Desk', x:80, y:130, w:90, h:50, msg:'A wooden desk with all your favorite books.' },
+      { id:'bookshelf', name:'Bookshelf', x:190, y:90, w:50, h:80, msg:'Packed with lore, manga, and an unread encyclopedia.' },
+      { id:'tv', name:'Television', x:390, y:90, w:55, h:45, msg:'Playing a soothing late-night cartoon channel!' },
+      { id:'fridge', name:'Mini Fridge', x:500, y:85, w:45, h:75, msg:'You opened the fridge and grabbed a fresh warm slice of pie! Yum!' },
+      { id:'plant', name:'Potted Plant', x:450, y:110, w:30, h:50, msg:'You poked the leaves. It seems happy!' },
+      { id:'plant2', name:'Cactus', x:60, y:300, w:25, h:35, msg:'Spiky but cute!' },
+      { id:'clock', name:'Wall Clock', x:150, y:50, w:24, h:24, msg:'Almost midnight...' },
+      { id:'poster', name:'Poster', x:120, y:80, w:40, h:50, msg:'A vintage space travel poster.' },
+      { id:'rug_small', name:'Small Rug', x:520, y:300, w:50, h:30, msg:'A soft, fluffy rug.' },
+      { id:'bed', name:'Cozy Bed', x:440, y:170, w:110, h:80, msg:'', isBed:true },
+      { id:'chest', name:'Chest', x:90, y:280, w:46, h:36, msg:'You unlocked the chest! Inside is a shiny star badge!' },
+      { id:'plushie', name:'Toy Corner', x:450, y:295, w:55, h:42, msg:'A teddy bear accompanied by building blocks and a wind-up robot toy!' },
+      { id:'window', name:'Starry Window', x:260, y:35, w:120, h:75, msg:'The night sky is so clear tonight.' },
+      { id:'chair', name:'Chair', x:80, y:160, w:25, h:30, msg:'' }
+    ],
+  },
+        livingroom: {
+    name: "Living Room",
+    bounds: { left: 50, right: 590, top: 30, bottom: 350 },
+    playerBounds: { left: 75, right: 580, top: 135, bottom: 340 },
+    floorY: 130,
+    doors: [
+      // East door – now flush with the wall (hitbox 575-595, player can reach it)
+      { x: 570, y: 180, w: 30, h: 70, drawX: 578, drawW: 12, target: 'bedroom', spawnX: 100, spawnY: 220, dir: 'east' },
+      // West door – goes outside (patio / stargazing area)
+      { x: 50, y: 180, w: 30, h: 70, drawX: 50, drawW: 12, target: 'patio', spawnX: 320, spawnY: 340, dir: 'west' },
+      // North left – kitchen (existing)
+      { x: 80, y: 130, w: 60, h: 10, target: 'kitchen', spawnX: 320, spawnY: 320, dir: 'north' },
+      // North left – gamer bedroom (new, next to kitchen)
+      { x: 180, y: 130, w: 60, h: 10, target: 'gamer', spawnX: 320, spawnY: 320, dir: 'north' },
+      // North right – bathroom
+      { x: 450, y: 130, w: 60, h: 10, target: 'bathroom', spawnX: 320, spawnY: 320, dir: 'north' }
+    ],
+         items: [
+      { id:'couch', name:'Couch', x:253, y:210, w:150, h:50, msg:'A comfy beige couch.' },
+      { id:'coffee_table', name:'Coffee Table', x:288, y:185, w:80, h:25, msg:'A wooden table with a mug.' },
+      { id:'tv_stand', name:'TV Stand', x:293, y:130, w:70, h:40, msg:'The remote is somewhere...' },
+      { id:'tv_living', name:'Television', x:298, y:90, w:60, h:40, msg:'Playing a late-night movie.' },
+      { id:'bookshelf_living', name:'Bookshelf', x:530, y:90, w:40, h:80, msg:'So many novels.' },
+      { id:'plant_large', name:'Large Plant', x:250, y:90, w:30, h:60, msg:'A tall leafy plant.' },
+      { id:'rug_living', name:'Living Room Rug', x:228, y:200, w:200, h:70, msg:'A soft patterned rug.' },
+      { id:'lamp_floor', name:'Floor Lamp', x:383, y:90, w:15, h:60, msg:'Warm light fills the corner.' },
+      { id:'painting', name:'Painting', x:285, y:55, w:50, h:40, msg:'A starry night painting.' },
+      { id:'side_chair', name:'Armchair', x:480, y:310, w:40, h:35, msg:'A cozy reading chair.' }
+    ],
+  },
+    patio: {
+    name: "Stargazing Patio",
+    bounds: { left: 0, right: 640, top: 0, bottom: 380 },
+    playerBounds: { left: 40, right: 600, top: 280, bottom: 360 },
+    floorY: 300, // grass starts here
+    doors: [
+      { x: 280, y: 345, w: 80, h: 15, target: 'livingroom', spawnX: 100, spawnY: 220, dir: 'south' }
+    ],
+    items: [
+      { id:'telescope', name:'Telescope', x:480, y:210, w:30, h:80, msg:'You spot a shooting star!', special:'shootingstar' },
+      { id:'bench', name:'Bench', x:150, y:270, w:100, h:35, msg:'A perfect spot to relax.' },
+      { id:'blanket', name:'Cozy Blanket', x:280, y:280, w:90, h:25, msg:'Cold... Makes me want to nap..', isBed:true }
+    ]
+  },
+}
+let currentRoom = 'bedroom';
+let player = { x:310, y:240, z:0, vz:0, speed:2.8, facing:1, isMoving:false, hopTimer:0, squishX:1, squishY:1, color:'#06d6a0' };
+
+const deskItems = {
+  bobsDiary: { x:140, y:120, w:90, h:140 },
+  myDiary: { x:260, y:110, w:100, h:150 },
+  gallery: { x:400, y:130, w:110, h:130 },
+  backBtn: { x:20, y:20, w:80, h:30 }
+};
+const MAX_CHARS = 500;
+let diaryPages = [''];
+let diaryPage = 0;
+let diaryLoaded = false;
+
+// Load diary from Firebase (fallback to localStorage)
+function loadDiaryFromCloud() {
+  db.ref('diary/pages').once('value').then(snapshot => {
+    const data = snapshot.val();
+    if (data && Array.isArray(data)) {
+      diaryPages = data;
+    } else {
+      // try localStorage for migration
+      const local = localStorage.getItem('bobs_haven_diary');
+      diaryPages = local ? JSON.parse(local) : [''];
+    }
+    diaryPage = 0;
+    diaryLoaded = true;
+    updateDiaryUI();
+  }).catch(() => {
+    const local = localStorage.getItem('bobs_haven_diary');
+    diaryPages = local ? JSON.parse(local) : [''];
+    diaryLoaded = true;
+    updateDiaryUI();
+  });
+}
+
+// Save diary to Firebase (and local backup)
+function saveDiaryToCloud() {
+  if (diaryText.value.length > MAX_CHARS) diaryText.value = diaryText.value.substring(0, MAX_CHARS);
+  diaryPages[diaryPage] = diaryText.value;
+  // Save to Firebase
+  db.ref('diary/pages').set(diaryPages).catch(() => {});
+  // Also update local backup
+  localStorage.setItem('bobs_haven_diary', JSON.stringify(diaryPages));
+  updateDiaryUI();
+}
+
+function updateDiaryUI() {
+  if (!diaryLoaded) return;
+  diaryText.value = diaryPages[diaryPage] || '';
+  pageDisplay.innerText = `Page ${diaryPage+1} / ${diaryPages.length}`;
+  const nb = document.getElementById('next-btn');
+  if (nb) nb.style.opacity = (diaryPage >= diaryPages.length-1 && (diaryPages[diaryPage]||'').length < MAX_CHARS) ? '0.5' : '1';
+}
+
+function saveDiary() {
+  if (!diaryLoaded) return;
+  if (diaryText.value.length > MAX_CHARS) diaryText.value = diaryText.value.substring(0, MAX_CHARS);
+  diaryPages[diaryPage] = diaryText.value;
+  // Auto-save to cloud
+  db.ref('diary/pages').set(diaryPages).catch(() => {});
+  localStorage.setItem('bobs_haven_diary', JSON.stringify(diaryPages));
+}
+
+function prevPage() {
+  if (!diaryLoaded || diaryPage <= 0) return;
+  saveDiary();
+  diaryPage--;
+  updateDiaryUI();
+}
+
+function nextPage() {
+  if (!diaryLoaded) return;
+  saveDiary();
+  if ((diaryPages[diaryPage]||'').length < MAX_CHARS) {
+    showToast(`Page must be full (${(diaryPages[diaryPage]||'').length}/${MAX_CHARS} chars) before moving next!`);
+    return;
+  }
+  if (diaryPage === diaryPages.length-1) {
+    diaryPages.push('');
+  }
+  diaryPage++;
+  updateDiaryUI();
+}
+
+// Kick off loading
+loadDiaryFromCloud();
+
+// ── PARTICLES / TOAST ─────────────────
+for (let i=0; i<25; i++) stars.push({ x:270+Math.random()*100, y:45+Math.random()*55, size:Math.random()*2+0.5, alpha:Math.random(), speed:0.02+Math.random()*0.03 });
+for (let i=0; i<18; i++) particles.push({ x:60+Math.random()*520, y:120+Math.random()*220, radius:Math.random()*1.5+0.5, alpha:Math.random()*0.5+0.2, vy:-0.15-Math.random()*0.2, vx:(Math.random()-0.5)*0.2, color:null, sparkle:false });
+function addSparkles(x,y,n=12) {
+  for (let i=0; i<n; i++) particles.push({ x,y, radius:Math.random()*2.5+1, alpha:1, vx:(Math.random()-0.5)*2.5, vy:(Math.random()-0.5)*2.5-1, color:['#ffd166','#ff70a6','#06d6a0','#fff'][Math.floor(Math.random()*4)], sparkle:true });
+}
+function showToast(t) { toast.innerText=t; toast.style.opacity='1'; clearTimeout(toastTimeout); toastTimeout=setTimeout(()=>toast.style.opacity='0',3500); }
+function isNear(item) { return Math.hypot(player.x-(item.x+item.w/2), player.y-(item.y+item.h/2)) < 60; }
+
+// ── VIEW SWITCHING ────────────────────
+function changeView(v) {
+  viewState = v; toast.style.opacity='0'; interactiveDiary.classList.remove('active');
+  if (v==='room') { viewBadge.innerText='Room View'; footerText.innerText='Explore the room!'; }
+  else if (v==='desk') { viewBadge.innerText='Desk View'; footerText.innerText='Click a book to open it.'; addSparkles(320,190,30); }
+  else if (v==='my_diary') { viewBadge.innerText='Writing...'; footerText.innerText='Auto-saved.'; interactiveDiary.classList.add('active'); updateDiaryUI(); }
+  else { viewBadge.innerText='Reading...'; footerText.innerText='Enjoy your memories!'; }
+}
+function openModal() { modalOpen=true; bedModal.classList.add('active'); }
+function closeModal() { modalOpen=false; bedModal.classList.remove('active'); }
+function sleepNow() { bedModal.classList.remove('active'); sleepScreen.style.opacity='1'; setTimeout(()=>window.location.href='index.html',2000); }
+function interactRoomItem(item) {
+  if (!item) return;
+  if (item.id==='desk') { changeView('desk'); return; }
+    if (item.isBed) { openModal(); return; }
+  if (item.id==='chest') { item.active=true; showToast(item.msg); addSparkles(item.x+23,item.y+15,20); }
+  if (item.special === 'shootingstar') {
+  showToast(item.msg);
+  createShootingStar();
+  return;
+  }
+  else if (item.id==='plant') { item.active=10; showToast(item.msg); addSparkles(item.x+15,item.y+10,5); }
+  else { showToast(item.msg); addSparkles(item.x+item.w/2,item.y+item.h/2,8); }
+}
+
+// ── INPUT ─────────────────────────────
+window.addEventListener('pointerdown', startAmbientAudio, { once:true });
+window.addEventListener('keydown', e => {
+  startAmbientAudio();
+  if (modalOpen || viewState==='my_diary') return;
+  keys[e.key.toLowerCase()] = true;
+  if (e.key==='Escape' && viewState!=='room') changeView(viewState==='desk'?'room':'desk');
+  if (viewState==='room') {
+    if ((e.key===' '||e.code==='Space') && player.z===0) { e.preventDefault(); player.vz=4.8; player.squishX=0.75; player.squishY=1.3; }
+    if (e.key.toLowerCase()==='e') { const near = rooms[currentRoom].items.find(isNear); if (near) interactRoomItem(near); }
+  }
+});
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()]=false);
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  mouseX = (e.clientX - rect.left) * (640 / rect.width);
+  mouseY = (e.clientY - rect.top) * (380 / rect.height);
+});
+canvas.addEventListener('click', e => {
+  if (modalOpen) return;
+  if (viewState==='room') {
+    const items = rooms[currentRoom].items;
+    const clicked = items.find(i => mouseX>=i.x&&mouseX<=i.x+i.w&&mouseY>=i.y&&mouseY<=i.y+i.h);
+    if (clicked && isNear(clicked)) interactRoomItem(clicked);
+  } else if (viewState==='desk') {
+    if (mouseX>deskItems.bobsDiary.x&&mouseX<deskItems.bobsDiary.x+deskItems.bobsDiary.w&&mouseY>deskItems.bobsDiary.y&&mouseY<deskItems.bobsDiary.y+deskItems.bobsDiary.h) changeView('bobs_diary');
+    else if (mouseX>deskItems.myDiary.x&&mouseX<deskItems.myDiary.x+deskItems.myDiary.w&&mouseY>deskItems.myDiary.y&&mouseY<deskItems.myDiary.y+deskItems.myDiary.h) changeView('my_diary');
+    else if (mouseX>deskItems.gallery.x&&mouseX<deskItems.gallery.x+deskItems.gallery.w&&mouseY>deskItems.gallery.y&&mouseY<deskItems.gallery.y+deskItems.gallery.h) changeView('gallery');
+    else if (mouseX>deskItems.backBtn.x&&mouseX<deskItems.backBtn.x+deskItems.backBtn.w&&mouseY>deskItems.backBtn.y&&mouseY<deskItems.backBtn.y+deskItems.backBtn.h) changeView('room');
+  } else if (viewState==='bobs_diary'||viewState==='gallery'||viewState==='my_diary') {
+    if (mouseX>deskItems.backBtn.x&&mouseX<deskItems.backBtn.x+deskItems.backBtn.w&&mouseY>deskItems.backBtn.y&&mouseY<deskItems.backBtn.y+deskItems.backBtn.h) changeView('desk');
+  }
+});
+
+// ── UPDATE ────────────────────────────
+function update(dt) {
+  if (viewState==='room' && !modalOpen) {
+    let dx=0, dy=0;
+    if (keys['a']||keys['arrowleft']) { dx-=1; player.facing=-1; }
+    if (keys['d']||keys['arrowright']) { dx+=1; player.facing=1; }
+    if (keys['w']||keys['arrowup']) dy-=1;
+    if (keys['s']||keys['arrowdown']) dy+=1;
+    if (joystickX||joystickY) { dx+=joystickX; dy+=joystickY; if(joystickX<-0.1)player.facing=-1; if(joystickX>0.1)player.facing=1; }
+    let mag = Math.hypot(dx,dy);
+    if (mag>1) { dx/=mag; dy/=mag; }
+    player.isMoving = dx!==0||dy!==0;
+    player.x += dx*player.speed;
+    player.y += dy*player.speed;
+    const pb = rooms[currentRoom].playerBounds;
+    player.x = Math.max(pb.left, Math.min(pb.right, player.x));
+    player.y = Math.max(pb.top, Math.min(pb.bottom, player.y));
+    if (player.isMoving && player.z===0) { player.hopTimer+=0.22; player.z=Math.abs(Math.sin(player.hopTimer))*7; player.squishX=1+Math.sin(player.hopTimer)*0.12; player.squishY=1-Math.sin(player.hopTimer)*0.12; }
+    else if (!player.isMoving && player.z===0) { player.hopTimer=0; player.squishX+=(1-player.squishX)*0.2; player.squishY+=(1-player.squishY)*0.2; }
+    if (player.z>0||player.vz!==0) { player.z+=player.vz; player.vz-=0.35; if (player.z<=0) { player.z=0; player.vz=0; player.squishX=1.35; player.squishY=0.65; } }
+    const plant = rooms[currentRoom].items.find(i=>i.id==='plant');
+    if (plant && plant.active>0) plant.active -= dt;
+    // Check doors
+    for (let door of rooms[currentRoom].doors) {
+      if (player.x>door.x && player.x<door.x+door.w && player.y>door.y && player.y<door.y+door.h) {
+        currentRoom = door.target;
+        player.x = door.spawnX; player.y = door.spawnY;
+        break;
+      }
+    }
+  }
+     // Update all shooting stars
+  for (let i = shootingStars.length - 1; i >= 0; i--) {
+    const star = shootingStars[i];
+    // Record trail point
+    star.trail.push({ x: star.x, y: star.y, alpha: 1 });
+    if (star.trail.length > 40) star.trail.shift();
+
+    // Move star
+    star.x += star.vx;
+    star.y += star.vy;
+    star.life--;
+
+    // Add trailing particle
+    particles.push({
+      x: star.x + (Math.random() - 0.5) * 4,
+      y: star.y + (Math.random() - 0.5) * 2,
+      radius: 2 + Math.random() * 2,
+      alpha: 0.8,
+      vx: 0, vy: 0,
+      color: '#ffffff',
+      sparkle: false,
+      life: 30,
+      maxLife: 30
+    });
+
+    // Fade trail points
+    for (let p of star.trail) p.alpha -= 0.025;
+    star.trail = star.trail.filter(p => p.alpha > 0);
+
+    // Remove star when done
+    if (star.x < -50 || star.y > 400 || star.life <= 0) {
+      shootingStars.splice(i, 1);
+    }
+  }
+}
+    particles.forEach((p, index) => {
+    p.y += p.vy;
+    p.x += p.vx;
+    if (p.life !== undefined) {
+      p.life--;
+      p.alpha = p.life / p.maxLife;
+    } else if (p.sparkle) {
+      p.alpha -= 0.025;
+    } else if (p.y < rooms[currentRoom].floorY - 10) {
+      p.y = rooms[currentRoom].bounds.bottom;
+    }
+  });
+    particles = particles.filter(p => (p.life !== undefined ? p.life > 0 : p.alpha > 0));
+
+
+// ── DRAWING ───────────────────────────
+function drawLivingRoom() {
+  const room = rooms[currentRoom];
+  ctx.fillStyle = '#101424'; ctx.fillRect(0,0,640,380);
+  const wallGrad = ctx.createLinearGradient(0, room.bounds.top, 0, room.floorY);
+  wallGrad.addColorStop(0,'#2b3552'); wallGrad.addColorStop(1,'#1e263d');
+  ctx.fillStyle = wallGrad;
+  ctx.fillRect(room.bounds.left, room.bounds.top, room.bounds.right-room.bounds.left, room.floorY-room.bounds.top);
+  ctx.fillStyle = 'rgba(255,255,255,0.03)';
+  for (let x=room.bounds.left+15; x<room.bounds.right; x+=30) ctx.fillRect(x, room.bounds.top, 15, room.floorY-room.bounds.top);
+  ctx.fillStyle = '#4a3728'; ctx.fillRect(room.bounds.left, room.floorY-8, room.bounds.right-room.bounds.left, 8);
+  const floorGrad = ctx.createLinearGradient(0,room.floorY,0,room.bounds.bottom);
+  floorGrad.addColorStop(0,'#604835'); floorGrad.addColorStop(1,'#3d2d20');
+  ctx.fillStyle = floorGrad;
+  ctx.fillRect(room.bounds.left, room.floorY, room.bounds.right-room.bounds.left, room.bounds.bottom-room.floorY);
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth=2;
+  for (let y=room.floorY+25; y<room.bounds.bottom; y+=25) {
+    ctx.beginPath(); ctx.moveTo(room.bounds.left,y); ctx.lineTo(room.bounds.right,y); ctx.stroke();
+  }
+  // Draw doors
+  for (let door of rooms[currentRoom].doors) {
+    drawDoor(door);
+  }
+}
+
+function drawPatio() {
+  // Night sky
+  ctx.fillStyle = '#0a0a1a'; ctx.fillRect(0, 0, 640, 300);
+  // Stars
+  for (let i = 0; i < 60; i++) {
+    const sx = (i * 37 + 13) % 640;
+    const sy = (i * 23 + 7) % 280;
+    const twinkle = Math.sin(Date.now() * 0.002 + i) * 0.5 + 0.5;
+    ctx.fillStyle = `rgba(255,255,255,${0.4 + twinkle * 0.6})`;
+    ctx.fillRect(sx, sy, 2, 2);
+  }
+  // Moon
+  ctx.fillStyle = '#fff3bf'; ctx.beginPath(); ctx.arc(550, 60, 30, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#0a0a1a'; ctx.beginPath(); ctx.arc(560, 55, 25, 0, Math.PI*2); ctx.fill();
+  // House exterior (bottom)
+  ctx.fillStyle = '#4a3728'; ctx.fillRect(40, 300, 560, 80);
+  ctx.fillStyle = '#2b1e16'; ctx.fillRect(40, 300, 560, 8);
+  // Roof
+  ctx.fillStyle = '#2b1e16'; ctx.beginPath(); ctx.moveTo(30, 300); ctx.lineTo(610, 300); ctx.lineTo(580, 270); ctx.lineTo(60, 270); ctx.fill();
+  // Door (south)
+  ctx.fillStyle = '#3a2f28'; ctx.fillRect(280, 340, 80, 40);
+  ctx.fillStyle = '#2b1e16'; ctx.fillRect(283, 343, 74, 34);
+  ctx.fillStyle = '#f9c74f'; ctx.fillRect(348, 360, 4, 6);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(284, 340, 72, 4);
+  // Windows
+  ctx.fillStyle = '#18122b'; ctx.fillRect(100, 320, 30, 30);
+  ctx.fillStyle = '#ffd166'; ctx.fillRect(110, 330, 3, 3); ctx.fillRect(120, 325, 3, 3);
+  ctx.fillStyle = '#18122b'; ctx.fillRect(510, 320, 30, 30);
+  ctx.fillStyle = '#ffd166'; ctx.fillRect(520, 328, 3, 3);
+  // Grass
+  ctx.fillStyle = '#2d5a27'; ctx.fillRect(0, 300, 640, 80);
+  ctx.fillStyle = '#3d7a33';
+  for (let x = 0; x < 640; x += 8) {
+    for (let y = 305; y < 380; y += 12) {
+      ctx.fillRect(x + Math.sin(y * 0.5) * 2, y, 3, 3);
+    }
+  }
+  // Path stones
+  ctx.fillStyle = '#8b8b8b';
+  for (let y = 340; y < 380; y += 15) {
+    ctx.beginPath(); ctx.ellipse(320, y, 15, 5, 0, 0, Math.PI*2); ctx.fill();
+  }
+  // Fireflies
+  for (let i = 0; i < 20; i++) {
+    const t = Date.now() * 0.001 + i;
+    const fx = 80 + (i * 37) % 480;
+    const fy = 220 + Math.sin(t * 1.5) * 30 + (i * 19) % 60;
+    ctx.fillStyle = `rgba(255,235,120,${0.4 + Math.sin(t * 2) * 0.3})`;
+    ctx.beginPath(); ctx.arc(fx, fy, 2, 0, Math.PI*2); ctx.fill();
+  }
+
+}
+function drawRoom() {
+  const room = rooms[currentRoom];
+  ctx.fillStyle = '#101424'; ctx.fillRect(0,0,640,380);
+  const wallGrad = ctx.createLinearGradient(0,room.bounds.top,0,room.floorY);
+  wallGrad.addColorStop(0,'#2b3552'); wallGrad.addColorStop(1,'#1e263d');
+  ctx.fillStyle = wallGrad;
+  ctx.fillRect(room.bounds.left, room.bounds.top, room.bounds.right-room.bounds.left, room.floorY-room.bounds.top);
+  ctx.fillStyle = 'rgba(255,255,255,0.03)';
+  for (let x=room.bounds.left+15; x<room.bounds.right; x+=30) ctx.fillRect(x, room.bounds.top, 15, room.floorY-room.bounds.top);
+  ctx.fillStyle = '#4a3728'; ctx.fillRect(room.bounds.left, room.floorY-8, room.bounds.right-room.bounds.left, 8);
+  const floorGrad = ctx.createLinearGradient(0,room.floorY,0,room.bounds.bottom);
+  floorGrad.addColorStop(0,'#604835'); floorGrad.addColorStop(1,'#3d2d20');
+  ctx.fillStyle = floorGrad;
+  ctx.fillRect(room.bounds.left, room.floorY, room.bounds.right-room.bounds.left, room.bounds.bottom-room.floorY);
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)'; ctx.lineWidth=2;
+  for (let y=room.floorY+25; y<room.bounds.bottom; y+=25) {
+    ctx.beginPath(); ctx.moveTo(room.bounds.left,y); ctx.lineTo(room.bounds.right,y); ctx.stroke();
+  }
+  // Rug
+  ctx.fillStyle = '#a882c3'; ctx.beginPath(); ctx.ellipse(320,240,110,55,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#be9ad8'; ctx.beginPath(); ctx.ellipse(320,240,95,45,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#ffe39f'; ctx.font='16px monospace'; ctx.fillText('★',315,245); ctx.fillText('✦',270,235); ctx.fillText('✦',360,245);
+    // Window
+  const win = rooms[currentRoom].items.find(i=>i.id==='window');
+  if (win) {
+    ctx.fillStyle = '#18122b'; ctx.fillRect(win.x,win.y,win.w,win.h);
+    stars.forEach(s => { ctx.fillStyle=`rgba(255,255,255,${s.alpha})`; ctx.fillRect(s.x,s.y,s.size,s.size); });
+    ctx.fillStyle = '#fff3bf'; ctx.beginPath(); ctx.arc(win.x+95,win.y+25,12,0,Math.PI*2); ctx.fill();
+    ctx.strokeStyle = '#5a4332'; ctx.lineWidth=4; ctx.strokeRect(win.x,win.y,win.w,win.h);
+    ctx.beginPath(); ctx.moveTo(win.x+win.w/2,win.y); ctx.lineTo(win.x+win.w/2,win.y+win.h); ctx.stroke();
+    ctx.fillStyle = '#e56b6f'; ctx.fillRect(win.x-5,win.y,25,win.h+10); ctx.fillRect(win.x+win.w-20,win.y,25,win.h+10);
+    ctx.fillStyle = '#5c3a21'; ctx.fillRect(win.x-10,win.y-5,win.w+20,8);
+  }
+  // Draw doors (outside window block!)
+  for (let door of rooms[currentRoom].doors) {
+    drawDoor(door);
+  }
+}
+function drawFurniture(item) {
+  if (item.id === 'desk') {
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(item.x+45,item.y+45,45,15,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#5c4033'; ctx.fillRect(item.x,item.y+15,item.w,item.h-15);
+    ctx.fillStyle = '#7a5444'; ctx.fillRect(item.x-5,item.y,item.w+10,25);
+    ctx.fillStyle = '#ff70a6'; ctx.fillRect(item.x+10,item.y+5,12,16);
+    ctx.fillStyle = '#4cc9f0'; ctx.fillRect(item.x+25,item.y+7,12,15);
+    ctx.fillStyle = '#ffd166'; ctx.fillRect(item.x+40,item.y+8,14,13);
+    ctx.fillStyle = '#d4af37'; ctx.fillRect(item.x+70,item.y-5,4,15);
+    ctx.fillStyle = '#ffea00'; ctx.beginPath(); ctx.arc(item.x+72,item.y-5,8,Math.PI,0); ctx.fill();
+    const light = ctx.createRadialGradient(item.x+72,item.y,2,item.x+72,item.y+30,40);
+    light.addColorStop(0,'rgba(255,234,160,0.5)'); light.addColorStop(1,'rgba(255,234,160,0)');
+    ctx.fillStyle = light; ctx.beginPath(); ctx.arc(item.x+72,item.y,40,0,Math.PI*2); ctx.fill();
+  } else if (item.id === 'bookshelf') {
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(item.x+5,item.y+item.h-5,item.w,15);
+    ctx.fillStyle = '#3e2723'; ctx.fillRect(item.x,item.y,item.w,item.h);
+    ctx.fillStyle = '#5d4037'; ctx.fillRect(item.x+4,item.y+4,item.w-8,item.h-8);
+    ctx.fillStyle = '#3e2723'; ctx.fillRect(item.x+4,item.y+35,item.w-8,5);
+    ctx.fillStyle = '#e63946'; ctx.fillRect(item.x+6,item.y+15,8,20);
+    ctx.fillStyle = '#a8dadc'; ctx.fillRect(item.x+15,item.y+12,6,23);
+    ctx.fillStyle = '#457b9d'; ctx.fillRect(item.x+22,item.y+18,10,17);
+    ctx.fillStyle = '#f4a261'; ctx.fillRect(item.x+8,item.y+45,12,25);
+  } else if (item.id === 'tv') {
+    ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(item.x+5,item.y+item.h-5,item.w-10,10);
+    ctx.fillStyle = '#222225'; ctx.fillRect(item.x,item.y,item.w,item.h-10);
+    ctx.fillStyle = '#111927'; ctx.fillRect(item.x+5,item.y+5,item.w-10,item.h-22);
+    ctx.fillStyle = '#4cc9f0'; ctx.fillRect(item.x+12,item.y+12,10,10);
+    ctx.fillStyle = '#ffd166'; ctx.fillRect(item.x+28,item.y+16,12,6);
+    ctx.fillStyle = '#444'; ctx.fillRect(item.x+item.w/2-4,item.y+item.h-10,8,6);
+  } else if (item.id === 'fridge') {
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(item.x+4,item.y+item.h-5,item.w-8,8);
+    ctx.fillStyle = '#e0fbfc'; ctx.fillRect(item.x,item.y,item.w,item.h);
+    ctx.strokeStyle = '#98c1d9'; ctx.lineWidth=2; ctx.strokeRect(item.x,item.y,item.w,item.h);
+    ctx.beginPath(); ctx.moveTo(item.x,item.y+25); ctx.lineTo(item.x+item.w,item.y+25); ctx.stroke();
+    ctx.fillStyle = '#3d5a80'; ctx.fillRect(item.x+6,item.y+10,3,10);
+    ctx.fillStyle = '#3d5a80'; ctx.fillRect(item.x+6,item.y+38,3,16);
+  } else if (item.id === 'plant') {
+    const wiggle = item.active>0 ? Math.sin(Date.now()*0.02)*3 : 0;
+    ctx.fillStyle = '#e76f51'; ctx.fillRect(item.x+5,item.y+30,20,20);
+    ctx.fillStyle = '#2a9d8f';
+    ctx.save(); ctx.translate(item.x+15,item.y+30); ctx.rotate(wiggle*Math.PI/180);
+    ctx.beginPath(); ctx.ellipse(0,-15,8,18,0,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-8,-10,6,12,-0.5,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(8,-8,6,10,0.5,0,Math.PI*2); ctx.fill();
+    ctx.restore();
+  } else if (item.id === 'bed') {
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(item.x+4,item.y+item.h-10,item.w-8,12);
+    ctx.fillStyle = '#5c4033'; ctx.fillRect(item.x,item.y,item.w,item.h);
+    ctx.fillStyle = '#bde0fe'; ctx.fillRect(item.x+6,item.y+15,item.w-12,item.h-20);
+    ctx.fillStyle = '#ffc8dd'; ctx.fillRect(item.x+6,item.y+40,item.w-12,item.h-44);
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(item.x+12,item.y+6,35,20); ctx.fillRect(item.x+58,item.y+6,35,20);
+    ctx.fillStyle = 'rgba(0,0,0,0.05)'; ctx.fillRect(item.x+12,item.y+20,35,6); ctx.fillRect(item.x+58,item.y+20,35,6);
+  } else if (item.id === 'chest') {
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.beginPath(); ctx.ellipse(item.x+item.w/2,item.y+item.h-2,22,8,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#6b4226'; ctx.fillRect(item.x,item.y+10,item.w,item.h-10);
+    ctx.fillStyle = '#d4af37'; ctx.fillRect(item.x+6,item.y+10,5,item.h-10); ctx.fillRect(item.x+item.w-11,item.y+10,5,item.h-10);
+    if (item.active) {
+      ctx.fillStyle = '#8b5a2b'; ctx.fillRect(item.x-2,item.y-2,item.w+4,10);
+      ctx.fillStyle = '#ffe066'; ctx.fillRect(item.x+10,item.y+6,item.w-20,6);
+    } else {
+      ctx.fillStyle = '#8b5a2b'; ctx.fillRect(item.x,item.y+2,item.w,10);
+      ctx.fillStyle = '#d4af37'; ctx.fillRect(item.x+item.w/2-4,item.y+8,8,6);
+    }
+  } else if (item.id === 'plushie') {
+    ctx.fillStyle = '#d4a373';
+    ctx.beginPath(); ctx.arc(item.x+16,item.y+20,10,0,Math.PI*2); ctx.arc(item.x+16,item.y+11,7,0,Math.PI*2); ctx.fill();
+    ctx.arc(item.x+10,item.y+6,3,0,Math.PI*2); ctx.arc(item.x+22,item.y+6,3,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#2b1e16'; ctx.fillRect(item.x+14,item.y+9,2,2); ctx.fillRect(item.x+18,item.y+9,2,2);
+    ctx.fillStyle = '#e63946'; ctx.fillRect(item.x+32,item.y+18,12,12);
+    ctx.fillStyle = '#457b9d'; ctx.fillRect(item.x+34,item.y+8,8,10);
+    ctx.fillStyle = '#a8dadc'; ctx.fillRect(item.x+44,item.y+14,9,14);
+    ctx.fillStyle = '#1d3557'; ctx.fillRect(item.x+46,item.y+10,5,5);
+    } else if (item.id === 'plant2') {
+    ctx.fillStyle = '#e76f51'; ctx.fillRect(item.x+5, item.y+15, 15, 20);
+    ctx.fillStyle = '#2a9d8f'; ctx.beginPath(); ctx.ellipse(item.x+12, item.y+8, 7, 14, 0, 0, Math.PI*2); ctx.fill();
+  } else if (item.id === 'clock') {
+    ctx.fillStyle = '#fff'; ctx.fillRect(item.x, item.y, 24, 24);
+    ctx.strokeStyle = '#333'; ctx.lineWidth=1; ctx.strokeRect(item.x, item.y, 24, 24);
+    ctx.fillStyle = '#333'; ctx.fillRect(item.x+10, item.y+3, 2, 8); ctx.fillRect(item.x+5, item.y+11, 14, 2);
+  } else if (item.id === 'poster') {
+    ctx.fillStyle = '#ffb5a7'; ctx.fillRect(item.x, item.y, item.w, item.h);
+    ctx.fillStyle = '#fff'; ctx.fillRect(item.x+5, item.y+10, 10, 10);
+    ctx.fillStyle = '#06d6a0'; ctx.beginPath(); ctx.arc(item.x+20, item.y+25, 8, 0, Math.PI*2); ctx.fill();
+  } else if (item.id === 'rug_small') {
+    ctx.fillStyle = '#ffd166'; ctx.beginPath(); ctx.ellipse(item.x+25, item.y+15, 25, 12, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#f4a261'; ctx.beginPath(); ctx.ellipse(item.x+25, item.y+15, 18, 8, 0, 0, Math.PI*2); ctx.fill();
+  } else if (item.id === 'chair') {
+    // Seat
+    ctx.fillStyle = '#5c4033'; ctx.fillRect(item.x+2, item.y+15, item.w-4, item.h-15);
+    // Backrest
+    ctx.fillStyle = '#7a5444'; ctx.fillRect(item.x+2, item.y, item.w-4, 15);
+    // Legs
+    ctx.fillStyle = '#3e2723';
+    ctx.fillRect(item.x+2, item.y+item.h-4, 4, 4);
+    ctx.fillRect(item.x+item.w-6, item.y+item.h-4, 4, 4);
+  } else if (item.id === 'hall_rug') {
+    ctx.fillStyle = '#b0306a'; ctx.beginPath(); ctx.ellipse(item.x+120, item.y+20, 120, 20, 0, 0, Math.PI*2); ctx.fill();
+  } else if (item.id === 'hall_plant') {
+    ctx.fillStyle = '#e76f51'; ctx.fillRect(item.x+5, item.y+30, 20, 25);
+    ctx.fillStyle = '#2a9d8f'; ctx.beginPath(); ctx.ellipse(item.x+15, item.y+20, 12, 25, 0, 0, Math.PI*2); ctx.fill();
+  } else if (item.id === 'hall_picture') {
+    ctx.fillStyle = '#ffb5a7'; ctx.fillRect(item.x, item.y, 30, 30);
+    ctx.fillStyle = '#fff'; ctx.fillRect(item.x+5, item.y+5, 10, 10);
+    ctx.fillStyle = '#4a3728'; ctx.fillRect(item.x+15, item.y+10, 10, 8);
+  } else if (item.id === 'hall_table') {
+    ctx.fillStyle = '#5c4033'; ctx.fillRect(item.x, item.y+10, item.w, item.h-10);
+    ctx.fillStyle = '#7a5444'; ctx.fillRect(item.x, item.y, item.w, 10);
+    ctx.fillStyle = '#ffea00'; ctx.beginPath(); ctx.arc(item.x+20, item.y-2, 4, 0, Math.PI*2); ctx.fill();
+    } else if (item.id === 'couch') {
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(item.x+4, item.y+item.h-8, item.w-8, 10);
+    // Main body
+    ctx.fillStyle = '#7a5444'; ctx.fillRect(item.x, item.y+10, item.w, item.h-10);
+    // Armrests
+    ctx.fillStyle = '#5c4033'; ctx.fillRect(item.x, item.y, 20, item.h-10);
+    ctx.fillRect(item.x+item.w-20, item.y, 20, item.h-10);
+    // Backrest (bottom edge, facing up toward TV)
+    ctx.fillStyle = '#8b6b4d'; ctx.fillRect(item.x+5, item.y+item.h-18, item.w-10, 18);
+    // Seat cushions
+    ctx.fillStyle = '#e8c8a0'; ctx.fillRect(item.x+25, item.y+15, 30, 25);
+    ctx.fillRect(item.x+60, item.y+15, 30, 25);
+    ctx.fillRect(item.x+95, item.y+15, 30, 25);
+    // Cushion highlights
+    ctx.fillStyle = '#f0dcc0'; ctx.fillRect(item.x+28, item.y+17, 10, 8);
+    ctx.fillRect(item.x+63, item.y+17, 10, 8);
+    ctx.fillRect(item.x+98, item.y+17, 10, 8);
+  } else if (item.id === 'coffee_table') {
+    ctx.fillStyle = '#6b4e3d'; ctx.fillRect(item.x, item.y+10, item.w, item.h-10);
+    ctx.fillStyle = '#8b6b4d'; ctx.fillRect(item.x, item.y, item.w, 10);
+    ctx.fillStyle = '#fff'; ctx.fillRect(item.x+20, item.y, 8, 6);
+  } else if (item.id === 'tv_stand') {
+    ctx.fillStyle = '#3e2723'; ctx.fillRect(item.x, item.y+10, item.w, item.h-10);
+    ctx.fillStyle = '#5d4037'; ctx.fillRect(item.x, item.y, item.w, 10);
+     } else if (item.id === 'tv_living') {
+    // TV body
+    ctx.fillStyle = '#222'; ctx.fillRect(item.x, item.y, item.w, item.h-8);
+    // Screen
+    ctx.fillStyle = '#111927'; ctx.fillRect(item.x+5, item.y+5, item.w-10, item.h-25);
+    // Content
+    ctx.fillStyle = '#4cc9f0'; ctx.fillRect(item.x+10, item.y+12, 15, 10);
+    ctx.fillStyle = '#ffd166'; ctx.fillRect(item.x+35, item.y+15, 10, 6);
+    // Antenna
+    ctx.fillStyle = '#444'; ctx.fillRect(item.x+item.w/2-2, item.y-6, 4, 8);
+    ctx.fillStyle = '#ffea00'; ctx.beginPath(); ctx.arc(item.x+item.w/2, item.y-8, 4, 0, Math.PI*2); ctx.fill();
+    // Stand / feet
+    ctx.fillStyle = '#333'; ctx.fillRect(item.x+5, item.y+item.h-8, item.w-10, 8);
+    ctx.fillStyle = '#555'; ctx.fillRect(item.x+8, item.y+item.h-2, 10, 4);
+    ctx.fillRect(item.x+item.w-18, item.y+item.h-2, 10, 4);
+  } else if (item.id === 'bookshelf_living') {
+    ctx.fillStyle = '#3e2723'; ctx.fillRect(item.x, item.y, item.w, item.h);
+    ctx.fillStyle = '#5d4037'; ctx.fillRect(item.x+4, item.y+4, item.w-8, item.h-8);
+    for (let i=0; i<3; i++) { ctx.fillStyle = '#e63946'; ctx.fillRect(item.x+6, item.y+10+i*20, 10, 12); }
+    } else if (item.id === 'plant_large') {
+    // Pot on floor
+    ctx.fillStyle = '#e76f51'; ctx.fillRect(item.x+5, item.y+item.h-20, 20, 20);
+    // Leaves
+    ctx.fillStyle = '#2a9d8f';
+    ctx.save(); ctx.translate(item.x+15, item.y+item.h-25);
+    ctx.beginPath(); ctx.ellipse(0, -15, 12, 22, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-10, -8, 8, 16, -0.3, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(10, -8, 8, 16, 0.3, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  } else if (item.id === 'rug_living') {
+    ctx.fillStyle = '#b0306a'; ctx.beginPath(); ctx.ellipse(item.x+100, item.y+30, 100, 25, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#8b1a4a'; ctx.beginPath(); ctx.ellipse(item.x+100, item.y+30, 80, 18, 0, 0, Math.PI*2); ctx.fill();
+    } else if (item.id === 'lamp_floor') {
+    // Pole
+    ctx.fillStyle = '#5c4033'; ctx.fillRect(item.x+5, item.y+20, 5, item.h-20);
+    // Base
+    ctx.fillStyle = '#3e2723'; ctx.beginPath(); ctx.ellipse(item.x+7, item.y+item.h-2, 10, 4, 0, 0, Math.PI*2); ctx.fill();
+    // Shade
+    ctx.fillStyle = '#ffea00'; ctx.beginPath(); ctx.moveTo(item.x-5, item.y+15); ctx.lineTo(item.x+20, item.y+15); ctx.lineTo(item.x+10, item.y); ctx.fill();
+    // Glow
+    const light = ctx.createRadialGradient(item.x+7, item.y+12, 2, item.x+7, item.y+12, 35);
+    light.addColorStop(0, 'rgba(255,234,160,0.4)'); light.addColorStop(1, 'rgba(255,234,160,0)');
+    ctx.fillStyle = light; ctx.beginPath(); ctx.arc(item.x+7, item.y+12, 35, 0, Math.PI*2); ctx.fill();
+
+  } else if (item.id === 'painting') {
+    ctx.fillStyle = '#ffb5a7'; ctx.fillRect(item.x, item.y, 50, 40);
+    ctx.fillStyle = '#1e263d'; ctx.fillRect(item.x+5, item.y+5, 40, 30);
+    ctx.fillStyle = '#ffd166'; ctx.beginPath(); ctx.arc(item.x+25, item.y+15, 5, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(item.x+20, item.y+12, 1.5, 0, Math.PI*2); ctx.fill(); ctx.arc(item.x+30, item.y+18, 1.5, 0, Math.PI*2); ctx.fill();
+    } else if (item.id === 'telescope') {
+    // Tripod legs – reach down to the ground (grass level 300)
+    ctx.fillStyle = '#5c4033';
+    ctx.fillRect(item.x+5, item.y+55, 3, 40);
+    ctx.fillRect(item.x+14, item.y+55, 3, 40);
+    ctx.fillRect(item.x+23, item.y+55, 3, 40);
+    // Center pole
+    ctx.fillStyle = '#4a3728';
+    ctx.fillRect(item.x+11, item.y+40, 9, 20);
+    // Main tube
+    ctx.fillStyle = '#8b5a2b';
+    ctx.fillRect(item.x+1, item.y+25, 28, 12);
+    ctx.fillStyle = '#a0522d';
+    ctx.fillRect(item.x+1, item.y+25, 8, 12);
+    // Lens
+    ctx.fillStyle = '#87ceeb';
+    ctx.fillRect(item.x+27, item.y+23, 5, 16);
+    // Eyepiece
+    ctx.fillStyle = '#333';
+    ctx.fillRect(item.x-3, item.y+27, 4, 8);
+  } else if (item.id === 'blanket') {
+    ctx.fillStyle = '#ffc8dd';
+    ctx.fillRect(item.x, item.y+5, item.w, item.h-5);
+    ctx.fillStyle = '#ff85a1';
+    ctx.fillRect(item.x+10, item.y+5, item.w-20, item.h-8);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(item.x+5, item.y-2, 25, 10);
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fillRect(item.x+5, item.y+2, 25, 4);
+  } else if (item.id === 'bench') {
+    // Shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fillRect(item.x+4, item.y+item.h-8, item.w-8, 8);
+    // Seat
+    ctx.fillStyle = '#6b4226';
+    ctx.fillRect(item.x, item.y+10, item.w, item.h-15);
+    // Backrest
+    ctx.fillStyle = '#8b5a2b';
+    ctx.fillRect(item.x+5, item.y, item.w-10, 15);
+    // Legs
+    ctx.fillStyle = '#3e2723';
+    ctx.fillRect(item.x+5, item.y+item.h-12, 8, 10);
+    ctx.fillRect(item.x+item.w-13, item.y+item.h-12, 8, 10);
+  } else if (item.id === 'blanket') {
+    // Soft blanket
+    ctx.fillStyle = '#ffc8dd';
+    ctx.fillRect(item.x, item.y+5, item.w, item.h-5);
+    ctx.fillStyle = '#ff85a1';
+    ctx.fillRect(item.x+10, item.y+5, item.w-20, item.h-8);
+    // Pillow
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(item.x+5, item.y-2, 25, 10);
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fillRect(item.x+5, item.y+2, 25, 4);
+  }
+}
+function drawPlayer() {
+  const px = player.x, py = player.y-player.z;
+  ctx.save(); ctx.translate(px,py);
+  ctx.fillStyle = `rgba(0,0,0,${Math.max(0.1,0.35-player.z*0.015)})`;
+  ctx.beginPath(); ctx.ellipse(0,player.z+10,14*(1+player.z*0.02),6,0,0,Math.PI*2); ctx.fill();
+  ctx.scale(player.facing*player.squishX, player.squishY);
+  ctx.fillStyle = player.color; ctx.beginPath(); ctx.ellipse(0,0,15,12,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.ellipse(-3,-5,7,4,-0.2,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#0a2e23'; ctx.beginPath(); ctx.arc(3,-2,2.8,0,Math.PI*2); ctx.arc(9,-2,2.8,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(2,-3,1,0,Math.PI*2); ctx.arc(8,-3,1,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,112,166,0.6)'; ctx.beginPath(); ctx.arc(1,2,2.5,0,Math.PI*2); ctx.arc(11,2,2.5,0,Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#0a2e23'; ctx.lineWidth=1.2; ctx.beginPath(); ctx.arc(6,1,2,0.1,Math.PI-0.1); ctx.stroke();
+  ctx.restore();
+}
+function drawDoor(door) {
+  const { x, y, w, h, dir, drawX, drawW } = door;
+  const visX = drawX !== undefined ? drawX : x;
+  const visW = drawW !== undefined ? drawW : w;
+
+  if (dir === 'north') {
+    const doorWidth = visW || 60;
+    const doorHeight = 70;
+    const doorX = visX;
+    const doorY = y - doorHeight;
+    ctx.fillStyle = '#3a2f28'; ctx.fillRect(doorX, doorY, doorWidth, doorHeight);
+    ctx.fillStyle = '#2b1e16'; ctx.fillRect(doorX+3, doorY+3, doorWidth-6, doorHeight-6);
+    ctx.fillStyle = '#f9c74f'; ctx.beginPath(); ctx.arc(doorX+doorWidth-8, doorY+doorHeight/2, 4, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(doorX+4, y, doorWidth-8, 8);
+    return;
+  }
+
+  // East / West doors – draw only the slim visual part
+  ctx.fillStyle = '#3a2f28'; ctx.fillRect(visX, y, visW, h);
+  ctx.fillStyle = '#2b1e16'; ctx.fillRect(visX+2, y+2, visW-4, h-4);
+  ctx.fillStyle = '#f9c74f';
+  if (dir === 'east') ctx.fillRect(visX+visW-4, y+h/2-3, 3, 6);
+  else if (dir === 'west') ctx.fillRect(visX+1, y+h/2-3, 3, 6);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  if (dir === 'east') ctx.fillRect(visX+visW, y+5, 10, h-10);
+  else if (dir === 'west') ctx.fillRect(visX-10, y+5, 10, h-10);
+}
+// Desk view drawing (unchanged)
+function drawBackButton() {
+  const btn = deskItems.backBtn;
+  const hover = mouseX>btn.x&&mouseX<btn.x+btn.w&&mouseY>btn.y&&mouseY<btn.y+btn.h;
+  ctx.fillStyle = hover?'#3a445d':'#232d42';
+  ctx.beginPath(); ctx.roundRect(btn.x,btn.y,btn.w,btn.h,5); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.font='14px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('◄ Back',btn.x+btn.w/2,btn.y+20);
+}
+function drawDeskTopView() {
+  ctx.fillStyle = '#3e2723'; ctx.fillRect(0,0,640,380);
+  ctx.strokeStyle = '#2d1b15'; ctx.lineWidth=2;
+  for (let i=20; i<640; i+=40) { ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i-15,380); ctx.stroke(); }
+  const light = ctx.createRadialGradient(590,-50,50,640,0,400);
+  light.addColorStop(0,'rgba(255,234,160,0.4)'); light.addColorStop(1,'rgba(255,234,160,0)');
+  ctx.fillStyle = light; ctx.fillRect(0,0,640,380);
+  const drawBook = (bk,color,title,rotate) => {
+    const hover = mouseX>bk.x&&mouseX<bk.x+bk.w&&mouseY>bk.y&&mouseY<bk.y+bk.h;
+    ctx.save(); ctx.translate(bk.x+bk.w/2,bk.y+bk.h/2); ctx.rotate(rotate*Math.PI/180);
+    if (hover) { ctx.scale(1.05,1.05); canvas.style.cursor='pointer'; }
+    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.fillRect(-bk.w/2+5,-bk.h/2+5,bk.w,bk.h);
+    ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(-bk.w/2,-bk.h/2,bk.w,bk.h,6); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.15)'; ctx.fillRect(-bk.w/2,-bk.h/2,15,bk.h);
+    ctx.fillStyle = '#fff'; ctx.fillRect(-25,-20,60,25);
+    ctx.fillStyle = '#111'; ctx.font='bold 11px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(title,5,-3); ctx.restore();
+  };
+  canvas.style.cursor = 'default';
+  drawBook(deskItems.bobsDiary,'#ff70a6',"Bob's Diary",-6);
+  drawBook(deskItems.myDiary,'#4cc9f0','My Diary',2);
+  drawBook(deskItems.gallery,'#ffd166','Gallery',8);
+  drawBackButton();
+}
+function drawOpenBookBackground(titleText) {
+  ctx.fillStyle = '#2d1b15'; ctx.fillRect(0,0,640,380);
+  ctx.fillStyle = '#f4ebd8'; ctx.beginPath(); ctx.roundRect(100,40,440,300,10); ctx.fill();
+  ctx.strokeStyle = '#d5c4a1'; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.moveTo(320,45); ctx.lineTo(320,335); ctx.stroke();
+  if (titleText) { ctx.fillStyle='#4a3728'; ctx.font='bold 20px sans-serif'; ctx.textAlign='center'; ctx.fillText(titleText,210,80); }
+}
+function drawbobsDiaryView() {
+  drawOpenBookBackground('Dear Diary,');
+  ctx.fillStyle = '#4a3728'; ctx.font = '15px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('Today I hopped around', 130, 130);
+  ctx.fillText('my cozy room. The stars', 130, 155);
+  ctx.fillText('looked very pretty.', 130, 180);
+  ctx.fillText('I feel so squishy and', 130, 220);
+  ctx.fillText('happy!', 130, 245);
+
+  // "A sketch of me" label
+  ctx.fillStyle = '#4a3728'; ctx.font = 'italic 13px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('A sketch of me:', 430, 80);
+
+  ctx.save(); ctx.translate(430, 180); ctx.scale(2.8, 2.8);
+
+  // Belly – soft green underbody
+  ctx.fillStyle = '#b7f0d0';
+  ctx.beginPath(); ctx.ellipse(0, 7, 11, 13, 0, 0, Math.PI*2); ctx.fill();
+
+  // Head – a clear circle (center 0,0, radius 9)
+  ctx.fillStyle = '#06d6a0';
+  ctx.beginPath(); ctx.arc(0, 0, 9, 0, Math.PI*2); ctx.fill();
+
+  // Highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.3)';
+  ctx.beginPath(); ctx.arc(-3, -5, 2.5, 0, Math.PI*2); ctx.fill();
+
+  // Eyes – two dots safely inside the circle (radius 9)
+  ctx.fillStyle = '#0a2e23';
+  ctx.beginPath(); ctx.arc(-3, -1, 1.6, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(3, -1, 1.6, 0, Math.PI*2); ctx.fill();
+
+  // Eye highlights
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(-3.5, -1.5, 0.5, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(2.5, -1.5, 0.5, 0, Math.PI*2); ctx.fill();
+
+  // Blush – small pink circles on cheeks
+  ctx.fillStyle = 'rgba(255, 112, 166, 0.7)';
+  ctx.beginPath(); ctx.arc(-6, 1, 1.5, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(6, 1, 1.5, 0, Math.PI*2); ctx.fill();
+
+  // Mouth – tiny curve
+  ctx.strokeStyle = '#0a2e23'; ctx.lineWidth = 0.8;
+  ctx.beginPath(); ctx.arc(0, 2, 2, 0.1, Math.PI - 0.1); ctx.stroke();
+
+  ctx.restore();
+
+  drawBackButton();
+}
+function drawMyDiaryView() { drawOpenBookBackground('My Personal Notes'); drawBackButton(); }
+function drawGalleryView() {
+  drawOpenBookBackground('Memories');
+
+  // Left polaroid: Nap Time (cozy bedroom)
+  ctx.save(); ctx.translate(210, 190); ctx.rotate(-0.1);
+  ctx.fillStyle = '#fff'; ctx.fillRect(-60, -70, 120, 140);
+  ctx.fillStyle = '#2b3552'; ctx.fillRect(-50, -60, 100, 90);  // wall
+  // Rug
+  ctx.fillStyle = '#a882c3'; ctx.beginPath(); ctx.ellipse(0, 20, 40, 12, 0, 0, Math.PI*2); ctx.fill();
+  // Tiny bed
+  ctx.fillStyle = '#5c4033'; ctx.fillRect(-30, -10, 60, 30);
+  ctx.fillStyle = '#bde0fe'; ctx.fillRect(-25, -5, 25, 20);
+  ctx.fillStyle = '#ffc8dd'; ctx.fillRect(-25, 5, 25, 10);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(-20, -8, 8, 6); ctx.fillRect(-10, -8, 8, 6);
+  // Sleeping Bob
+  ctx.fillStyle = '#06d6a0'; ctx.beginPath(); ctx.ellipse(5, -14, 7, 5, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#0a2e23'; ctx.beginPath(); ctx.arc(3, -15, 1.2, 0, Math.PI*2); ctx.arc(7, -15, 1.2, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#0a2e23'; ctx.lineWidth=0.5; ctx.beginPath(); ctx.arc(5, -12, 1.5, 0.1, Math.PI-0.1); ctx.stroke();
+  // Window with stars (no moon)
+  ctx.fillStyle = '#18122b'; ctx.fillRect(25, -40, 20, 20);
+  ctx.fillStyle = '#ffd166'; ctx.beginPath(); ctx.arc(32, -35, 1, 0, Math.PI*2); ctx.arc(38, -30, 1, 0, Math.PI*2); ctx.fill();
+  // Little lamp glow
+  ctx.fillStyle = '#ffea00'; ctx.beginPath(); ctx.arc(-30, -15, 4, 0, Math.PI*2); ctx.fill();
+  // Label
+  ctx.fillStyle = '#4a3728'; ctx.font = '10px cursive'; ctx.textAlign = 'center';
+  ctx.fillText('Nap Time', 0, 55);
+  ctx.restore();
+
+  // Right polaroid: Sparkles! (outdoor night)
+  ctx.save(); ctx.translate(430, 190); ctx.rotate(0.15);
+  ctx.fillStyle = '#fff'; ctx.fillRect(-60, -70, 120, 140);
+  ctx.fillStyle = '#1e263d'; ctx.fillRect(-50, -60, 100, 90);
+  for (let i=0; i<8; i++) {
+    ctx.fillStyle = ['#ffea00','#ff70a6','#06d6a0','#fff'][i%4];
+    ctx.beginPath(); ctx.arc(-40 + i*12, -50 + i*5, 2.5, 0, Math.PI*2); ctx.fill();
+  }
+  // Happy Bob
+  ctx.fillStyle = '#06d6a0'; ctx.beginPath(); ctx.ellipse(0, 5, 10, 12, 0, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#0a2e23'; ctx.beginPath(); ctx.arc(-3, 3, 1.8, 0, Math.PI*2); ctx.arc(3, 3, 1.8, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-4, 2, 0.7, 0, Math.PI*2); ctx.arc(2, 2, 0.7, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,112,166,0.7)'; ctx.beginPath(); ctx.arc(-6, 6, 1.5, 0, Math.PI*2); ctx.arc(6, 6, 1.5, 0, Math.PI*2); ctx.fill();
+  ctx.strokeStyle = '#0a2e23'; ctx.lineWidth=0.8; ctx.beginPath(); ctx.arc(0, 7, 3, 0.1, Math.PI-0.1); ctx.stroke();
+  ctx.fillStyle = '#4a3728'; ctx.font = '10px cursive'; ctx.textAlign = 'center';
+  ctx.fillText('Sparkles!', 0, 55);
+  ctx.restore();
+
+  drawBackButton();
+}
+
+
+function render() {
+  ctx.clearRect(0,0,640,380);
+      if (viewState==='room') {
+    if (currentRoom === 'livingroom') drawLivingRoom();
+    else if (currentRoom === 'patio') drawPatio();
+    else drawRoom(); // bedroom and others
+    const items = rooms[currentRoom].items;
+    const renderables = [...items.filter(i=>i.id!=='window'), { isPlayer:true, y:player.y }];
+    renderables.sort((a,b) => a.y - b.y);
+    renderables.forEach(obj => obj.isPlayer ? drawPlayer() : drawFurniture(obj));
+  } else if (viewState==='desk') drawDeskTopView();
+  else if (viewState==='bobs_diary') drawbobsDiaryView();
+  else if (viewState==='gallery') drawGalleryView();
+  else if (viewState==='my_diary') drawMyDiaryView();
+  // particles & UI
+  const nearItem = rooms[currentRoom].items.find(isNear);
+  if (nearItem && viewState==='room' && !modalOpen) {
+    ctx.fillStyle = 'rgba(15,23,42,0.85)'; ctx.strokeStyle='#06d6a0'; ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.roundRect(200,15,240,32,8); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#fff'; ctx.font='bold 13px sans-serif'; ctx.textAlign='center';
+    ctx.fillText(`Press [E] or Click: ${nearItem.name}`,320,36);
+  }
+     // Draw all shooting stars
+  for (const star of shootingStars) {
+    // Trail
+    if (star.trail.length > 1) {
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(star.trail[0].x, star.trail[0].y);
+      for (let i = 1; i < star.trail.length; i++) {
+        ctx.lineTo(star.trail[i].x, star.trail[i].y);
+      }
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 9;
+      ctx.stroke();
+      ctx.lineWidth = 1;
+    }
+    // Head
+    const alpha = star.life / star.maxLife;
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.beginPath(); ctx.arc(star.x, star.y, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgba(255,255,255,${alpha * 0.3})`;
+    ctx.beginPath(); ctx.arc(star.x, star.y, 8, 0, Math.PI * 2); ctx.fill();
+  }
+}
+function createShootingStar() {
+  shootingStars.push({
+    x: 620 + Math.random() * 40,
+    y: 10 + Math.random() * 40,
+    vx: -0.7 - Math.random() * 0.5,
+    vy: 0.15 + Math.random() * 0.2,
+    life: 500,
+    maxLife: 500,
+    trail: []   // each star has its own trail
+  });
+}
+let lastTime = 0;
+function loop(time) {
+  const dt = Math.min(1.2, (time - lastTime) / 16.67 || 1);
+  lastTime = time;
+  startAmbientAudio();
+  update(dt);
+  render();
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+
+</script>
+</body>
+</html>
