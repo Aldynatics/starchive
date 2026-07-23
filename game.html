@@ -77,9 +77,9 @@ canvas {
     touch-action: none;
 }
 
-/* Dynamic joystick */
 #joystick-container {
     position: absolute;
+    bottom: 55px; left: 55px;
     width: 110px;
     height: 110px;
     border-radius: 50%;
@@ -88,7 +88,11 @@ canvas {
     pointer-events: auto;
     touch-action: none;
     z-index: 15;
-    display: none;
+    display: none;                /* hidden on desktop */
+}
+@media (pointer: coarse), (max-width: 900px) {
+    #joystick-container { display: block; }
+    #mobile-buttons { display: flex; }
 }
 #joystick-knob {
     position: absolute;
@@ -308,84 +312,25 @@ let keys = {}, mouseX = 0, mouseY = 0, toastTimeout, modalOpen = false;
 let viewState = 'room', particles = [], stars = [];
 let joystickX = 0, joystickY = 0;
 
-/* ── Dynamic Joystick ───────────────── */
+/* ── Fixed Joystick (mobile only) ───────────────── */
 const joyCon = document.getElementById('joystick-container');
 const joyKnob = document.getElementById('joystick-knob');
-const gameContainer = document.querySelector('.game-container');
-if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
-  document.getElementById('mobile-buttons').style.display = 'flex';
-}
 let isDragging = false;
 let joyCenter = { x: 0, y: 0 };
 const maxJoy = 30;
-let tapStartTime = 0;
-let tapStartPos = { x: 0, y: 0 };
-let joystickShown = false;
 
-// Show joystick on touch inside the game area
-canvas.addEventListener('pointerdown', (e) => {
-  if (viewState !== 'room' || modalOpen) return;
+joyCon.addEventListener('pointerdown', (e) => {
   e.preventDefault();
-  tapStartTime = Date.now();
-  tapStartPos = { x: e.clientX, y: e.clientY };
-  isDragging = false;          // not yet a drag
+  isDragging = true;
+  const rect = joyCon.getBoundingClientRect();
+  joyCenter = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
+  updateJoystick(e.clientX, e.clientY);
+  joyCon.setPointerCapture(e.pointerId);
 });
 
-canvas.addEventListener('pointermove', (e) => {
-  if (!tapStartTime) return;   // no active touch
-  const dx = e.clientX - tapStartPos.x;
-  const dy = e.clientY - tapStartPos.y;
-  const dist = Math.hypot(dx, dy);
-
-  // Only start joystick after moving more than 8px (a real drag)
-  if (!isDragging && dist > 8) {
-    isDragging = true;
-    // Show and position joystick
-    const rect = gameContainer.getBoundingClientRect();
-    joyCon.style.left = (tapStartPos.x - rect.left - joyCon.offsetWidth / 2) + 'px';
-    joyCon.style.top  = (tapStartPos.y - rect.top  - joyCon.offsetHeight / 2) + 'px';
-    joyCenter = { x: tapStartPos.x, y: tapStartPos.y };
-    joyKnob.style.transform = 'translate(0px,0px)';
-    joyCon.style.display = 'block';
-    joyCon.setPointerCapture(e.pointerId);
-    joystickShown = true;
-  }
-
-  if (isDragging) {
-    updateJoystick(e.clientX, e.clientY);
-  }
-});
-
-canvas.addEventListener('pointerup', (e) => {
-  if (isDragging) {
-    endJoy();
-    // Don't let this become a click
-    e.preventDefault();
-    e.stopPropagation();
-    return;
-  }
-
-  // It was a tap – check if it's a quick tap (< 300ms)
-  const dt = Date.now() - tapStartTime;
-  if (dt < 300 && joystickShown === false) {
-    // It's a tap: forward the event to the canvas click handler manually
-    // The canvas click handler uses mouseX, mouseY – we need to set them from this touch
-    const rect = canvas.getBoundingClientRect();
-    mouseX = (e.clientX - rect.left) * (640 / rect.width);
-    mouseY = (e.clientY - rect.top) * (380 / rect.height);
-    // Call the same logic as the click handler
-    handleCanvasClick();
-  }
-
-  // Reset tap state
-  tapStartTime = 0;
-  joystickShown = false;
-});
-
-canvas.addEventListener('pointercancel', (e) => {
-  if (isDragging) endJoy();
-  tapStartTime = 0;
-  joystickShown = false;
+joyCon.addEventListener('pointermove', (e) => {
+  if (!isDragging) return;
+  updateJoystick(e.clientX, e.clientY);
 });
 
 function endJoy() {
@@ -393,8 +338,9 @@ function endJoy() {
   joystickX = 0;
   joystickY = 0;
   joyKnob.style.transform = 'translate(0px,0px)';
-  joyCon.style.display = 'none';
 }
+joyCon.addEventListener('pointerup', endJoy);
+joyCon.addEventListener('pointercancel', endJoy);
 
 function updateJoystick(cx, cy) {
   const dx = cx - joyCenter.x;
@@ -408,6 +354,19 @@ function updateJoystick(cx, cy) {
   joystickX = mx / maxJoy;
   joystickY = my / maxJoy;
 }
+
+/* ── Mobile Buttons (always visible on touch devices) ─────────────────── */
+document.getElementById('hop-btn').addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (viewState === 'room' && player.z === 0 && !modalOpen) { player.vz = 4.8; player.squishX = 0.75; player.squishY = 1.3; }
+});
+document.getElementById('action-btn').addEventListener('pointerdown', e => {
+    e.preventDefault();
+    if (viewState === 'room' && !modalOpen) {
+        const near = rooms[currentRoom].items.find(isNear);
+        if (near) interactRoomItem(near);
+    }
+});
 
 // Helper to trigger the canvas click logic without a mouse event
 function handleCanvasClick() {
