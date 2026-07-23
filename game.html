@@ -8,7 +8,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
     <input type="file" id="gallery-file-input" accept="image/*" style="display:none;" />
     <style>
-       :root {
+     :root {
     --bg-dark: #090c15;
     --panel-bg: #151a28;
     --border-color: #2a344d;
@@ -17,11 +17,11 @@
     --accent-pink: #ff70a6;
     --text-main: #f8f9fa;
     --text-muted: #a0aec0;
-    --game-aspect: 640 / 380;   /* ~1.684 */
+    --game-aspect: 640 / 380;
 }
 * { box-sizing: border-box; }
 body {
-    margin: 0; min-height: 100vh;
+    margin: 0; height: 100vh;
     display: grid; place-items: center;
     background: radial-gradient(circle at center, #131a2d 0%, var(--bg-dark) 100%);
     color: var(--text-main);
@@ -29,13 +29,14 @@ body {
     overflow: hidden;
     user-select: none;
     -webkit-user-select: none;
-    touch-action: manipulation;   /* prevent pull‑to‑refresh etc. */
+    touch-action: manipulation;
 }
 
-/* Shell fits inside the viewport while preserving the game aspect ratio */
+/* Shell fills available space, never overflows */
 .shell {
-    width: min(96vw, calc((100vh - 30px) * var(--game-aspect)));
+    max-height: 100vh;
     max-width: 1250px;
+    width: min(96vw, calc((100vh - 20px) * var(--game-aspect)));
     border: 3px solid var(--border-color);
     box-shadow: 0 20px 60px rgba(0,0,0,0.6), inset 0 0 15px rgba(255,255,255,0.05);
     background: var(--panel-bg);
@@ -45,7 +46,6 @@ body {
     flex-direction: column;
 }
 
-/* HUD and footer stay outside the game canvas */
 .hud {
     display: flex; justify-content: space-between; align-items: center;
     gap: 12px; margin-bottom: 12px; font-size: 14px; color: var(--text-muted);
@@ -62,22 +62,22 @@ body {
     position: relative;
     width: 100%;
     flex: 1 1 auto;
-    /* Enforce the game's aspect ratio inside the container */
     aspect-ratio: var(--game-aspect);
+    min-height: 0;   /* allows shrinking to fit within max-height */
 }
 
 canvas {
     display: block;
-    width: 100%;
-    height: 100%;
+    width: 100%; height: 100%;
     border-radius: 12px;
     image-rendering: pixelated;
     image-rendering: crisp-edges;
     box-shadow: 0 8px 24px rgba(0,0,0,0.4);
     cursor: crosshair;
+    touch-action: none;   /* important: prevent browser gestures */
 }
 
-/* Dynamic joystick – hidden by default, shown by JS on touch */
+/* Dynamic joystick – hidden until touch */
 #joystick-container {
     position: absolute;
     width: 110px;
@@ -88,7 +88,7 @@ canvas {
     pointer-events: auto;
     touch-action: none;
     z-index: 15;
-    display: none;               /* JS will set display:block on touch */
+    display: none;
 }
 #joystick-knob {
     position: absolute;
@@ -101,7 +101,6 @@ canvas {
     pointer-events: none;
 }
 
-/* Mobile buttons – only visible on touch devices (via JS media query) */
 #mobile-buttons {
     position: absolute; bottom: 20px; right: 20px;
     display: none; gap: 12px; z-index: 15;
@@ -301,6 +300,10 @@ const interactiveDiary = document.getElementById('interactive-diary');
 const diaryText = document.getElementById('diary-text');
 const pageDisplay = document.getElementById('page-display');
 
+if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
+  document.getElementById('mobile-buttons').style.display = 'flex';
+}
+
 let keys = {}, mouseX = 0, mouseY = 0, toastTimeout, modalOpen = false;
 let viewState = 'room', particles = [], stars = [];
 let joystickX = 0, joystickY = 0;
@@ -308,22 +311,30 @@ let joystickX = 0, joystickY = 0;
 /* ── Dynamic Joystick ───────────────── */
 const joyCon = document.getElementById('joystick-container');
 const joyKnob = document.getElementById('joystick-knob');
+const gameContainer = document.querySelector('.game-container');
 let isDragging = false;
 let joyCenter = { x: 0, y: 0 };
 const maxJoy = 30;
 
-joyCon.addEventListener('pointerdown', (e) => {
+// Show joystick on touch inside the game area
+canvas.addEventListener('pointerdown', (e) => {
+  if (viewState !== 'room' || modalOpen) return;
   e.preventDefault();
   isDragging = true;
-  // Move the joystick base to the touch point
-  const rect = joyCon.getBoundingClientRect();
-  joyCon.style.left = (e.clientX - rect.width/2) + 'px';
-  joyCon.style.top = (e.clientY - rect.height/2) + 'px';
+
+  const rect = gameContainer.getBoundingClientRect();
+  // Position the joystick centered on the touch point
+  const left = e.clientX - rect.left - joyCon.offsetWidth / 2;
+  const top  = e.clientY - rect.top  - joyCon.offsetHeight / 2;
+  joyCon.style.left = left + 'px';
+  joyCon.style.top  = top + 'px';
   joyCenter = { x: e.clientX, y: e.clientY };
   joyKnob.style.transform = 'translate(0px,0px)';
   joyCon.style.display = 'block';
-  updateJoystick(e.clientX, e.clientY);
+
+  // Capture pointer so move/up go to the joystick
   joyCon.setPointerCapture(e.pointerId);
+  updateJoystick(e.clientX, e.clientY);
 });
 
 joyCon.addEventListener('pointermove', (e) => {
@@ -353,7 +364,6 @@ function updateJoystick(cx, cy) {
   joystickX = mx / maxJoy;
   joystickY = my / maxJoy;
 }
-
 /* ── Mobile Buttons ─────────────────── */
 document.getElementById('hop-btn').addEventListener('pointerdown', e => {
     e.preventDefault();
