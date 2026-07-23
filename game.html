@@ -8,7 +8,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.2/firebase-database-compat.js"></script>
     <input type="file" id="gallery-file-input" accept="image/*" style="display:none;" />
     <style>
-     :root {
+    :root {
     --bg-dark: #090c15;
     --panel-bg: #151a28;
     --border-color: #2a344d;
@@ -22,7 +22,7 @@
 * { box-sizing: border-box; }
 body {
     margin: 0; height: 100vh;
-    display: grid; place-items: center;
+    display: flex; justify-content: center; align-items: center;
     background: radial-gradient(circle at center, #131a2d 0%, var(--bg-dark) 100%);
     color: var(--text-main);
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -32,11 +32,10 @@ body {
     touch-action: manipulation;
 }
 
-/* Shell fills available space, never overflows */
+/* Shell shrinks to fit within viewport */
 .shell {
     max-height: 100vh;
-    max-width: 1250px;
-    width: min(96vw, calc((100vh - 20px) * var(--game-aspect)));
+    max-width: 100vw;
     border: 3px solid var(--border-color);
     box-shadow: 0 20px 60px rgba(0,0,0,0.6), inset 0 0 15px rgba(255,255,255,0.05);
     background: var(--panel-bg);
@@ -44,6 +43,7 @@ body {
     border-radius: 20px;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 .hud {
@@ -58,12 +58,12 @@ body {
     padding: 4px 10px; border-radius: 20px; border: 1px solid rgba(255,209,102,0.3);
 }
 
+/* Game container controls the width – height follows from aspect ratio */
 .game-container {
     position: relative;
-    width: 100%;
-    flex: 1 1 auto;
+    width: min(100%, calc((100vh - 120px) * var(--game-aspect)));
     aspect-ratio: var(--game-aspect);
-    min-height: 0;   /* allows shrinking to fit within max-height */
+    margin: 0 auto;
 }
 
 canvas {
@@ -74,10 +74,10 @@ canvas {
     image-rendering: crisp-edges;
     box-shadow: 0 8px 24px rgba(0,0,0,0.4);
     cursor: crosshair;
-    touch-action: none;   /* important: prevent browser gestures */
+    touch-action: none;
 }
 
-/* Dynamic joystick – hidden until touch */
+/* Dynamic joystick */
 #joystick-container {
     position: absolute;
     width: 110px;
@@ -312,34 +312,80 @@ let joystickX = 0, joystickY = 0;
 const joyCon = document.getElementById('joystick-container');
 const joyKnob = document.getElementById('joystick-knob');
 const gameContainer = document.querySelector('.game-container');
+if (/Mobi|Android|iPhone|iPad/i.test(navigator.userAgent)) {
+  document.getElementById('mobile-buttons').style.display = 'flex';
+}
 let isDragging = false;
 let joyCenter = { x: 0, y: 0 };
 const maxJoy = 30;
+let tapStartTime = 0;
+let tapStartPos = { x: 0, y: 0 };
+let joystickShown = false;
 
 // Show joystick on touch inside the game area
 canvas.addEventListener('pointerdown', (e) => {
   if (viewState !== 'room' || modalOpen) return;
   e.preventDefault();
-  isDragging = true;
-
-  const rect = gameContainer.getBoundingClientRect();
-  // Position the joystick centered on the touch point
-  const left = e.clientX - rect.left - joyCon.offsetWidth / 2;
-  const top  = e.clientY - rect.top  - joyCon.offsetHeight / 2;
-  joyCon.style.left = left + 'px';
-  joyCon.style.top  = top + 'px';
-  joyCenter = { x: e.clientX, y: e.clientY };
-  joyKnob.style.transform = 'translate(0px,0px)';
-  joyCon.style.display = 'block';
-
-  // Capture pointer so move/up go to the joystick
-  joyCon.setPointerCapture(e.pointerId);
-  updateJoystick(e.clientX, e.clientY);
+  tapStartTime = Date.now();
+  tapStartPos = { x: e.clientX, y: e.clientY };
+  isDragging = false;          // not yet a drag
 });
 
-joyCon.addEventListener('pointermove', (e) => {
-  if (!isDragging) return;
-  updateJoystick(e.clientX, e.clientY);
+canvas.addEventListener('pointermove', (e) => {
+  if (!tapStartTime) return;   // no active touch
+  const dx = e.clientX - tapStartPos.x;
+  const dy = e.clientY - tapStartPos.y;
+  const dist = Math.hypot(dx, dy);
+
+  // Only start joystick after moving more than 8px (a real drag)
+  if (!isDragging && dist > 8) {
+    isDragging = true;
+    // Show and position joystick
+    const rect = gameContainer.getBoundingClientRect();
+    joyCon.style.left = (tapStartPos.x - rect.left - joyCon.offsetWidth / 2) + 'px';
+    joyCon.style.top  = (tapStartPos.y - rect.top  - joyCon.offsetHeight / 2) + 'px';
+    joyCenter = { x: tapStartPos.x, y: tapStartPos.y };
+    joyKnob.style.transform = 'translate(0px,0px)';
+    joyCon.style.display = 'block';
+    joyCon.setPointerCapture(e.pointerId);
+    joystickShown = true;
+  }
+
+  if (isDragging) {
+    updateJoystick(e.clientX, e.clientY);
+  }
+});
+
+canvas.addEventListener('pointerup', (e) => {
+  if (isDragging) {
+    endJoy();
+    // Don't let this become a click
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+
+  // It was a tap – check if it's a quick tap (< 300ms)
+  const dt = Date.now() - tapStartTime;
+  if (dt < 300 && joystickShown === false) {
+    // It's a tap: forward the event to the canvas click handler manually
+    // The canvas click handler uses mouseX, mouseY – we need to set them from this touch
+    const rect = canvas.getBoundingClientRect();
+    mouseX = (e.clientX - rect.left) * (640 / rect.width);
+    mouseY = (e.clientY - rect.top) * (380 / rect.height);
+    // Call the same logic as the click handler
+    handleCanvasClick();
+  }
+
+  // Reset tap state
+  tapStartTime = 0;
+  joystickShown = false;
+});
+
+canvas.addEventListener('pointercancel', (e) => {
+  if (isDragging) endJoy();
+  tapStartTime = 0;
+  joystickShown = false;
 });
 
 function endJoy() {
@@ -349,8 +395,6 @@ function endJoy() {
   joyKnob.style.transform = 'translate(0px,0px)';
   joyCon.style.display = 'none';
 }
-joyCon.addEventListener('pointerup', endJoy);
-joyCon.addEventListener('pointercancel', endJoy);
 
 function updateJoystick(cx, cy) {
   const dx = cx - joyCenter.x;
@@ -363,6 +407,62 @@ function updateJoystick(cx, cy) {
   joyKnob.style.transform = `translate(${mx}px, ${my}px)`;
   joystickX = mx / maxJoy;
   joystickY = my / maxJoy;
+}
+
+// Helper to trigger the canvas click logic without a mouse event
+function handleCanvasClick() {
+  if (modalOpen) return;
+  if (viewState === 'room') {
+    const items = rooms[currentRoom].items;
+    const clicked = items.find(i => mouseX >= i.x && mouseX <= i.x + i.w && mouseY >= i.y && mouseY <= i.y + i.h);
+    if (clicked && isNear(clicked)) interactRoomItem(clicked);
+  } else if (viewState === 'desk') {
+    if (mouseX > deskItems.bobsDiary.x && mouseX < deskItems.bobsDiary.x + deskItems.bobsDiary.w &&
+        mouseY > deskItems.bobsDiary.y && mouseY < deskItems.bobsDiary.y + deskItems.bobsDiary.h) changeView('bobs_diary');
+    else if (mouseX > deskItems.myDiary.x && mouseX < deskItems.myDiary.x + deskItems.myDiary.w &&
+            mouseY > deskItems.myDiary.y && mouseY < deskItems.myDiary.y + deskItems.myDiary.h) changeView('my_diary');
+    else if (mouseX > deskItems.gallery.x && mouseX < deskItems.gallery.x + deskItems.gallery.w &&
+            mouseY > deskItems.gallery.y && mouseY < deskItems.gallery.y + deskItems.gallery.h) changeView('gallery');
+    else if (mouseX > deskItems.myGallery.x && mouseX < deskItems.myGallery.x + deskItems.myGallery.w &&
+            mouseY > deskItems.myGallery.y && mouseY < deskItems.myGallery.y + deskItems.myGallery.h) changeView('my_gallery');
+    else if (mouseX > deskItems.backBtn.x && mouseX < deskItems.backBtn.x + deskItems.backBtn.w &&
+            mouseY > deskItems.backBtn.y && mouseY < deskItems.backBtn.y + deskItems.backBtn.h) changeView('room');
+  } else if (viewState === 'my_gallery') {
+    const pics = window.myGalleryData || [];
+    const totalPages = pics.length + 1;
+    if (mouseX > deskItems.backBtn.x && mouseX < deskItems.backBtn.x + deskItems.backBtn.w &&
+        mouseY > deskItems.backBtn.y && mouseY < deskItems.backBtn.y + deskItems.backBtn.h) {
+      changeView('desk');
+      return;
+    }
+    const isAddPage = (currentGalleryPage >= pics.length);
+    if (isAddPage) {
+      if (mouseX > 310 && mouseX < 550 && mouseY > 60 && mouseY < 320) {
+        triggerFileUpload();
+        return;
+      }
+    } else {
+      if (mouseX > 405 && mouseX < 455 && mouseY > 290 && mouseY < 308) {
+        deleteGalleryItem(currentGalleryPage);
+        return;
+      }
+    }
+    if (currentGalleryPage > 0 && mouseX > 185 && mouseX < 235 && mouseY > 322 && mouseY < 347) {
+      currentGalleryPage--;
+      render();
+      return;
+    }
+    if (currentGalleryPage < totalPages - 1 && mouseX > 405 && mouseX < 455 && mouseY > 322 && mouseY < 347) {
+      currentGalleryPage++;
+      render();
+      return;
+    }
+  } else if (viewState === 'bobs_diary' || viewState === 'gallery' || viewState === 'my_diary') {
+    if (mouseX > deskItems.backBtn.x && mouseX < deskItems.backBtn.x + deskItems.backBtn.w &&
+        mouseY > deskItems.backBtn.y && mouseY < deskItems.backBtn.y + deskItems.backBtn.h) {
+      changeView('desk');
+    }
+  }
 }
 /* ── Mobile Buttons ─────────────────── */
 document.getElementById('hop-btn').addEventListener('pointerdown', e => {
